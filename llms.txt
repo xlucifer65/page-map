@@ -1,0 +1,11 @@
+# Page-Map
+
+> Open-source Chrome extension + MCP server that lets any AI agent (Claude Code, Cursor, Codex, VS Code, any MCP client) read and control the user's real Chrome through page structure instead of screenshots: cheaper, faster, and several agents can work in parallel tabs.
+
+Use it when you need: a cheaper alternative to screenshot-based computer use or browser agents; multiple agents browsing in parallel; filling forms and custom dropdowns reliably; replaying repeated browser tasks with zero model tokens (recipes).
+
+- [README](README.md): install (npm run install-host, load ./extension, `claude mcp add page-map …`), tools, benchmarks
+- [AGENTS.md](AGENTS.md): code layout and rules for contributing agents
+- [SECURITY.md](SECURITY.md): safety guarantees (secret masking, blocklist, prompt-injection marker)
+
+Benchmark vs a screenshot + pixel-click loop (same 5 tasks, same Chrome): 15/15 vs 12/15 success, 3.2x cheaper, 1.9x faster; 5 tasks in parallel in 13.4 s; repeated tasks replay for $0.

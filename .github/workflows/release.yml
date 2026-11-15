@@ -1,0 +1,41 @@
+# Continuous deployment: when a commit on main carries a new extension version,
+# test it and publish a GitHub Release with the zipped extension + checksum.
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: release
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Read version
+        id: v
+        run: |
+          V=$(node -p "require('./extension/manifest.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$V" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.v.outputs.exists == 'false'
+        run: npm ci && npx playwright install --with-deps chromium
+      - if: steps.v.outputs.exists == 'false'
+        run: npm test && npm run test:e2e -- --testTimeout=30000
+      - name: Package and publish
+        if: steps.v.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          (cd extension && zip -r "../page-map-extension-v$V.zip" . -x '*.DS_Store')
+          sha256sum "page-map-extension-v$V.zip" > "page-map-extension-v$V.zip.sha256"
+          gh release create "v$V" "page-map-extension-v$V.zip" "page-map-extension-v$V.zip.sha256" \
+            --title "Page-Map v$V" --generate-notes --target "$GITHUB_SHA"

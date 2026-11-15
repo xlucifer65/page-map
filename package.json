@@ -1,7 +1,7 @@
 {
   "name": "page-map",
   "version": "0.1.0",
-  "description": "Chrome extension + MCP server that lets AI agents read and drive web pages through structure instead of screenshots.",
+  "description": "Open-source Chrome extension + MCP server: let any AI agent read and control Chrome through page structure instead of screenshots \u2014 cheaper, faster, parallel agents, zero-token task replay.",
   "type": "module",
   "private": true,
   "scripts": {
@@ -24,5 +24,24 @@
     "jsdom": "^31.0.1",
     "playwright": "^1.65.1",
     "vitest": "^5.1.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "chrome-extension",
+    "browser-automation",
+    "ai-agent",
+    "computer-use",
+    "claude-code",
+    "cursor",
+    "accessibility-tree",
+    "multi-agent",
+    "web-agent",
+    "llm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xlucifer65/page-map.git"
   }
 }

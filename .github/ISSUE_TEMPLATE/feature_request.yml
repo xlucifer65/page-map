@@ -1,0 +1,11 @@
+name: Feature / skill idea
+description: A new tool, generic skill, or a way to save tokens
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: What problem does it solve?, description: "Ideally with numbers: turns, tokens, seconds." }
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes: { label: Proposed solution }

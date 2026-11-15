@@ -1,0 +1,14 @@
+name: Bug report
+description: Something in Page-Map is broken
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: What happened?, description: What you did, what you expected, what you got. }
+    validations: { required: true }
+  - type: textarea
+    id: output
+    attributes: { label: Tool output / errors, description: "Relevant tool results or logs (no private data).", render: text }
+  - type: input
+    id: env
+    attributes: { label: Environment, placeholder: "OS, Chrome version, agent (Claude Code / Cursor / …), Page-Map version" }

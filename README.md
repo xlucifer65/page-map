@@ -1,27 +1,51 @@
-# Page-Map
+# Page-Map — open-source, low-cost browser control for AI agents
 
-Let **your own AI agent** (Claude Code, Cursor, any MCP client) read and drive Chrome through the page's
-**structure** — not screenshots. No API keys in the extension, ~10–50× fewer tokens per step, millisecond lookups.
+[![CI](https://github.com/xlucifer65/page-map/actions/workflows/ci.yml/badge.svg)](https://github.com/xlucifer65/page-map/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**Page-Map lets any AI agent — Claude Code, Cursor, Codex, VS Code, any MCP client — read and control your real
+Chrome through the page's structure instead of screenshots.** It is free, runs locally, needs no API key, and
+several agents can work in parallel tabs.
+
+Looking for a **cheaper alternative to screenshot-based computer use or browser agents**, a **multi-agent browser
+tool**, or **zero-cost replay of repeated browser tasks**? That's what this is.
+
+| Same 5 real tasks, same Chrome | Page-Map | Screenshot + pixel-click loop |
+|---|---|---|
+| Success | **15/15** | 12/15 (fails dropdowns) |
+| Cost | **$0.40** | $1.27 (3.2× more) |
+| Time | **132 s** | 246 s (1.9× slower) |
+| 5 tasks in parallel | **13.4 s** | not possible (needs the one visible tab) |
+| Repeating a task | **$0, < 3 s** (recipe replay) | full price every time |
+
+<sub>Measured with `scripts/compare.js` (Claude via `claude -p`, 3 runs per task, answers checked against live sources). Reproduce it yourself.</sub>
 
 ```
-AI agent ──stdio MCP──► mcp/server.js ──unix socket (0600)──► host/native-host.js ──native messaging──► extension ──► page
+AI agent ──MCP──► mcp/server.js ──private socket──► native host ──native messaging──► extension ──► your tabs
 ```
 
 The agent is the brain; Page-Map is its eyes and hands. Scripts do everything deterministic; the agent only decides.
 
-## Install (macOS / Linux)
+## Install (macOS / Linux, Chrome)
 
 ```sh
+git clone https://github.com/xlucifer65/page-map.git && cd page-map
 npm install
-npm run install-host          # registers the native host with Chrome, prints the next two steps
+npm run install-host          # registers the native host with Chrome
 ```
 
 1. Chrome → `chrome://extensions` → **Developer mode** → **Load unpacked** → pick `./extension`
-   (the `key` in the manifest pins the id to `hmoipddaijkfcidjilmbbiodbmgedbjm`, which the host trusts).
+   (or unzip the latest [release](../../releases)). The manifest `key` pins the id to `hmoipddaijkfcidjilmbbiodbmgedbjm`.
 2. Add the MCP server to your agent:
-   ```sh
-   claude mcp add page-map -- "$(which node)" "$PWD/mcp/server.js"
-   ```
+
+   | Agent | Command / config |
+   |---|---|
+   | Claude Code | `claude mcp add -s user page-map -- node "$PWD/mcp/server.js"` |
+   | Cursor / VS Code / others | MCP server, stdio: command `node`, args `["<repo>/mcp/server.js"]` |
+
+3. Ask your agent: *"Open news.ycombinator.com and tell me the top story."*
+
+Windows isn't supported yet (needs a registry-based host install) — PRs welcome.
 
 ## Tools
 
@@ -112,6 +136,14 @@ npm run bench       # token benchmark on live sites
 
 `CHECKLIST.md` lists every requirement and the test that proves it. `.claude/agents/page-map-monitor.md`
 is an independent auditor agent that re-checks the whole checklist.
+
+## Contributing
+
+Issues, site reports and PRs are welcome — from people and from coding agents. See [CONTRIBUTING.md](CONTRIBUTING.md)
+and [AGENTS.md](AGENTS.md). Security reports: [SECURITY.md](SECURITY.md) (please report privately).
+
+Page-Map is an independent community project. It is not affiliated with or endorsed by Anthropic, Google, or any
+browser or AI vendor.
 
 ## Limits / next
 

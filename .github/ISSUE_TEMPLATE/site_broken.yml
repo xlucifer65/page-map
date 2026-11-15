@@ -1,0 +1,15 @@
+name: Site doesn't work
+description: Page-Map can't read or act on a specific website
+labels: [site-support]
+body:
+  - type: input
+    id: url
+    attributes: { label: Public URL, description: Only public pages — never share private or logged-in pages. }
+    validations: { required: true }
+  - type: textarea
+    id: task
+    attributes: { label: What was the agent trying to do? }
+    validations: { required: true }
+  - type: textarea
+    id: output
+    attributes: { label: outline / read_page / find output, render: text }
