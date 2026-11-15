@@ -480,3 +480,30 @@ describe('large-page notice', () => {
     expect(p.C.formatDiff(p.C.diff(m, m))).toBe('no changes');
   });
 });
+
+describe('find typo tolerance', () => {
+  const p = page('<button>Search</button><input aria-label="Email"><button>Reset password</button><a href="#">Seach team</a>');
+  const names = (q, o) => p.C.find(p.win, p.doc, p.refs, q, o).items.map((i) => i.name);
+
+  it('matches a word within one edit (insert, swap, substitute)', () => {
+    expect(names('serch')[0]).toBe('Search');
+    expect(names('emial')).toEqual(['Email']);
+    expect(names('pasword')).toEqual(['Reset password']);
+    expect(names('seerch')).toEqual(['Search']);
+  });
+  it('scores typos below substring matches', () => {
+    const q = names('serch re'); // typo+substring words, not an exact substring
+    expect(names('search')[0]).toBe('Search'); // exact stays first
+    expect(names('seach')).toEqual(['Seach team', 'Search']); // substring before typo
+    expect(q).not.toContain('Email');
+  });
+  it('ignores short words and junk', () => {
+    expect(names('zzzz')).toEqual([]);
+    expect(names('emil'.slice(0, 3))).toEqual([]);
+    expect(names('zzzz', { minScore: 20 })).toEqual([]);
+  });
+  it('label targeting still tolerates a typo but not junk', () => {
+    expect(p.C.resolveField(p.win, p.doc, p.refs, 'Emial').role).toBe('textbox');
+    expect(p.C.resolveField(p.win, p.doc, p.refs, 'zzzz')).toBeFalsy();
+  });
+});

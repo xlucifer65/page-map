@@ -476,6 +476,21 @@
     return { text: out.join('\n'), matches: scored.length };
   }
 
+  const nameWords = (s) => s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+  // Edit distance ≤ 1 (insert, delete, substitute, or swap of adjacent letters).
+  function withinOneEdit(a, b) {
+    if (a === b) return true;
+    if (Math.abs(a.length - b.length) > 1) return false;
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    if (a.length === b.length) {
+      if (a.slice(i + 1) === b.slice(i + 1)) return true;
+      return a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2);
+    }
+    return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+  }
+
   function find(win, doc, refs, query, opts = {}) {
     const limit = opts.limit || 8;
     const q = clean(query, 200).toLowerCase();
@@ -491,7 +506,10 @@
       else if (hay.includes(q)) s = 40;
       else {
         const hit = words.filter(w => hay.includes(w)).length;
+        const typos = words.filter(w => !hay.includes(w) && w.length >= 4 && nameWords(hay).some(h => h.length >= 4 && withinOneEdit(w, h))).length;
         if (hit) s = 20 * hit / words.length;
+        // Typo tier: all words match, none exactly → above partial matches, below substring (40).
+        if (typos) s = hit === 0 && typos === words.length ? 35 : s + 10 * typos / words.length;
         if (words.includes(it.role)) s += 10;
       }
       if (s > 0 && s >= (opts.minScore || 0)) scored.push([s, it]);
