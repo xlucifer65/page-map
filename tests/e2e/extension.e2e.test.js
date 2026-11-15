@@ -167,6 +167,23 @@ describe('F4 end-to-end', () => {
     expect(textOf(r)).toMatch(/not found|previous page load/);
   });
 
+  it('unknown tab id fails clearly', async () => {
+    const r = await call('outline', { tab: 999999 });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toContain('tab 999999 not found (call list_tabs)');
+  });
+
+  it('sticky tab resets after its tab is closed', async () => {
+    await call('navigate', { url: `${base}/page2.html`, new_tab: true });
+    const opened = ctx.pages().find((p) => p.url().endsWith('/page2.html'));
+    await opened.close();
+    const first = await call('outline');
+    expect(first.isError).toBe(true);
+    expect(textOf(first)).toMatch(/tab \d+ not found/);
+    const second = await call('outline');
+    expect(second.isError).toBeFalsy();
+  });
+
   it('screenshot fallback returns an image', async () => {
     const r = await call('screenshot');
     expect(r.content[0].type).toBe('image');
