@@ -459,3 +459,24 @@ describe('nextBackoff', () => {
     expect(C.nextBackoff(16000, 5000).wait).toBe(16000);
   });
 });
+
+describe('large-page notice', () => {
+  const big = (n) => Array.from({ length: n }, (_, i) => `<button>Item ${i}</button>`).join('');
+  const NOTE = /page very large: scan stopped after 20 nodes/;
+
+  it('find, outline and diffs mention a capped scan', () => {
+    const p = page(`<h1>T</h1>${big(40)}`);
+    expect(p.C.find(p.win, p.doc, p.refs, 'item', { maxVisit: 20 }).note).toMatch(NOTE);
+    expect(p.C.outline(p.win, p.doc, p.refs, { maxVisit: 20 })).toMatch(NOTE);
+    const map = (n) => p.C.lineMap(p.C.snapshot(p.win, p.doc, p.refs, { maxVisit: n }));
+    expect(p.C.formatDiff(p.C.diff(map(20), map(20)))).toMatch(NOTE);
+  });
+
+  it('adds nothing on normal pages', () => {
+    const p = page(`<h1>T</h1>${big(5)}`);
+    expect(p.C.find(p.win, p.doc, p.refs, 'item').note).toBe('');
+    expect(p.C.outline(p.win, p.doc, p.refs)).not.toMatch(/very large/);
+    const m = p.C.lineMap(p.C.snapshot(p.win, p.doc, p.refs));
+    expect(p.C.formatDiff(p.C.diff(m, m))).toBe('no changes');
+  });
+});

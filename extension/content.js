@@ -218,7 +218,7 @@
         const r = C.find(window, document, refs, args.query || '', { role: args.role, limit: args.limit || 8 });
         const lines = r.items.map(C.formatItem);
         const more = r.matches > r.items.length ? `\n… ${r.matches - r.items.length} more matches` : '';
-        return { ok: true, text: (lines.join('\n') || `no match for "${args.query}"`) + more };
+        return { ok: true, text: (lines.join('\n') || `no match for "${args.query}"`) + more + (r.note ? `\n… ${r.note}` : '') };
       }
       case 'changes': {
         const now = fullMap();

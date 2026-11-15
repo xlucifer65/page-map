@@ -257,10 +257,10 @@
   }
 
   // Depth-first walk over the document including open shadow roots, in document order.
-  function walk(doc, visit) {
+  function walk(doc, visit, maxVisit = MAX_VISIT) {
     const stack = [doc.documentElement];
     let n = 0;
-    while (stack.length && n < MAX_VISIT) {
+    while (stack.length && n < maxVisit) {
       const el = stack.pop();
       if (!el || el.nodeType !== 1) continue;
       n++;
@@ -275,10 +275,13 @@
     return n;
   }
 
+  const capNote = (max) => `page very large: scan stopped after ${max} nodes`;
+
   // ---------- public API ----------
   function snapshot(win, doc, refs, opts = {}) {
     const viewportOnly = opts.viewportOnly === true;
     const maxItems = opts.maxItems || 300;
+    const maxVisit = opts.maxVisit || MAX_VISIT;
     const roleFilter = opts.role ? String(opts.role).toLowerCase() : null;
     const items = [];
     let total = 0;
@@ -303,7 +306,7 @@
       const f = flagsOf(el, doc);
       if (f.length) item.flags = f;
       items.push(item);
-    });
+    }, maxVisit);
     return {
       url: String(win.location.href),
       title: clean(doc.title, 120),
@@ -311,7 +314,8 @@
       total,
       offscreen,
       truncated: total - offscreen > items.length,
-      capped: visited >= MAX_VISIT,
+      capped: visited >= maxVisit,
+      maxVisit,
     };
   }
 
@@ -327,7 +331,7 @@
     const lines = snap.items.map(formatItem);
     const tail = [];
     if (snap.offscreen) tail.push(`${snap.offscreen} more off-screen (scroll or viewport_only=false)`);
-    if (snap.capped) tail.push(`page very large: scan stopped after ${MAX_VISIT} nodes`);
+    if (snap.capped) tail.push(capNote(snap.maxVisit));
     if (snap.truncated) tail.push(`truncated at ${snap.items.length}/${snap.total - snap.offscreen} (raise max_items or use find)`);
     return [head, ...lines, ...(tail.length ? ['… ' + tail.join('; ')] : [])].join('\n');
   }
@@ -335,7 +339,8 @@
   function outline(win, doc, refs, opts = {}) {
     const lines = [];
     const counts = {};
-    walk(doc, (el) => {
+    const maxVisit = opts.maxVisit || MAX_VISIT;
+    const visited = walk(doc, (el) => {
       const tag = el.tagName.toLowerCase();
       const role = el.getAttribute('role') || LANDMARK_TAGS[tag];
       const isLandmark = role && LANDMARK_ROLES.has(role) && (tag !== 'header' && tag !== 'footer' || !el.closest('article,aside,main,nav,section'));
@@ -355,7 +360,7 @@
       const r = roleOf(el);
       if (r === 'img-decorative' || r === 'focusable' || r === 'clickable') return;
       counts[r] = (counts[r] || 0) + 1;
-    });
+    }, maxVisit);
     const max = Math.max(1, doc.documentElement.scrollHeight - win.innerHeight);
     const pct = Math.round(100 * Math.min(1, (win.scrollY || 0) / max));
     const countStr = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k}`).join(', ');
@@ -366,6 +371,7 @@
       `scroll ${pct}% · ${countStr || 'no interactive elements'}`,
       ...lines.slice(0, 60),
       ...(lines.length > 60 ? [`… ${lines.length - 60} more headings/landmarks`] : []),
+      ...(visited >= maxVisit ? [`… ${capNote(maxVisit)}`] : []),
       ...(preview.text ? ['--- text preview ---', preview.text, ...(preview.rest > 0 ? [`… ${preview.rest} more chars (read_text)`] : [])] : []),
     ].join('\n');
   }
@@ -474,7 +480,7 @@
     const limit = opts.limit || 8;
     const q = clean(query, 200).toLowerCase();
     const words = q.split(/\s+/).filter(Boolean);
-    const snap = snapshot(win, doc, refs, { role: opts.role, maxItems: 5000 });
+    const snap = snapshot(win, doc, refs, { role: opts.role, maxItems: 5000, maxVisit: opts.maxVisit });
     const scored = [];
     for (const it of snap.items) {
       const hay = `${it.name} ${it.value || ''}`.toLowerCase();
@@ -492,7 +498,7 @@
     }
     scored.sort((a, b) => b[0] - a[0]);
     const top = scored.slice(0, limit).map(x => x[1]);
-    return { items: top, matches: scored.length };
+    return { items: top, matches: scored.length, capped: snap.capped, note: snap.capped ? capNote(snap.maxVisit) : '' };
   }
 
   function diff(prev, next) {
@@ -503,20 +509,22 @@
       else if (prev.get(ref) !== line) changed.push(line);
     }
     for (const [ref, line] of prev) if (!next.has(ref)) removed.push(line);
-    return { added, removed, changed };
+    return { added, removed, changed, note: next.note || prev.note || '' };
   }
 
   function formatDiff(d, max = 40) {
     const out = [];
+    const note = d.note ? `\n… ${d.note}` : '';
     for (const l of d.added) out.push('+ ' + l);
     for (const l of d.changed) out.push('~ ' + l);
     for (const l of d.removed) out.push('- ' + l);
-    if (!out.length) return 'no changes';
-    return out.length > max ? [...out.slice(0, max), `… ${out.length - max} more changes`].join('\n') : out.join('\n');
+    if (!out.length) return 'no changes' + note;
+    return (out.length > max ? [...out.slice(0, max), `… ${out.length - max} more changes`].join('\n') : out.join('\n')) + note;
   }
 
   function lineMap(snap) {
     const m = new Map();
+    m.note = snap.capped ? capNote(snap.maxVisit) : '';
     for (const it of snap.items) m.set(it.ref, formatItem(it));
     return m;
   }
