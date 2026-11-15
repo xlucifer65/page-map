@@ -28,15 +28,14 @@ function connect() {
     void chrome.runtime.lastError; // consume ("host not found" etc.)
     port = null;
     // Only a port that stayed up a while counts as success; instant failures keep backing off.
-    if (Date.now() - portOpenedAt > 5000) backoff = 1000;
-    scheduleReconnect();
+    scheduleReconnect(Date.now() - portOpenedAt);
   });
 }
 
-function scheduleReconnect() {
+function scheduleReconnect(livedMs = 0) {
   if (retryTimer) return;
-  const wait = backoff;
-  backoff = Math.min(backoff * 2, 30000);
+  const { wait, next } = C.nextBackoff(backoff, livedMs);
+  backoff = next;
   retryTimer = setTimeout(connect, wait);
 }
 

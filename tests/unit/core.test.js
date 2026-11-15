@@ -440,3 +440,22 @@ describe('actions', () => {
     expect(p.C.act(p.win, p.doc, p.refs, 'select_option', { ref, option: 'Spain' }).error).toContain('France | Germany');
   });
 });
+
+describe('nextBackoff', () => {
+  const { C } = page('');
+  it('doubles after short-lived ports', () => {
+    let b = 1000;
+    const waits = [];
+    for (let i = 0; i < 3; i++) { const r = C.nextBackoff(b, 100); waits.push(r.wait); b = r.next; }
+    expect(waits).toEqual([1000, 2000, 4000]);
+    expect(b).toBe(8000);
+  });
+  it('caps at 30 s', () => {
+    expect(C.nextBackoff(30000, 0)).toEqual({ wait: 30000, next: 30000 });
+    expect(C.nextBackoff(16000, 0).next).toBe(30000);
+  });
+  it('resets to 1 s after a port that lived > 5 s', () => {
+    expect(C.nextBackoff(16000, 5001)).toEqual({ wait: 1000, next: 2000 });
+    expect(C.nextBackoff(16000, 5000).wait).toBe(16000);
+  });
+});

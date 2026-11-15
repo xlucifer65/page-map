@@ -699,7 +699,14 @@
     return null;
   }
 
+  // Reconnect backoff: a port that lived > 5 s resets to 1 s; otherwise keep backing off (max 30 s).
+  function nextBackoff(current, livedMs) {
+    const wait = livedMs > 5000 ? 1000 : current;
+    return { wait, next: Math.min(wait * 2, 30000) };
+  }
+
   root.PageMapCore = {
+    nextBackoff,
     findOption, resolveField, findInterruption,
     createRefs, snapshot, format, formatItem, outline, readText, grepText, find, diff, formatDiff, lineMap,
     isBlocked, isSecret, looksLikeCard, maskCards, roleOf, nameOf, act, DEFAULT_BLOCKLIST,
