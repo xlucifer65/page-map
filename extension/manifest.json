@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Page-Map",
+  "version": "0.1.0",
+  "description": "Lets your own AI agent read and drive web pages through structure instead of screenshots.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxTk/NSJyf1/F61wI1w40I1fUEJ3b0RisnLox9yYNHeVQa1nkAi08SIoGay23TMmE0zNbAH4fee6y5rqDAatd2UvZ+0shd5iZO18LbaS91wdx2TtN2KwR26BvqhYabt30ROI3yRjjhA6d/Hq857aXFyVUYAiYTKYELPbw3lgZq8t+w/tyvRqk+cX7sZcDa7SaqpStv8G+kr1SiPeJkR5gQW2v3qKqF6R9HIjQi1ahIndFfkaht7rS1Wg/yDA2k4O93hsA2NPfrW37DPxoV1lM8b1VYvmjctYpmKUHdIpmZbnFqi7QTo1qtYopKnGClwdo0TIELRkWQCmCMf5ducaSjQIDAQAB",
+  "permissions": ["nativeMessaging", "tabs", "scripting", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["core.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}

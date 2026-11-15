@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Skills Fixture</title>
+<style>
+  #cookie-banner { position: fixed; bottom: 0; left: 0; right: 0; background: #eee; padding: 16px; }
+  [role=listbox] { border: 1px solid #999; margin: 0; padding: 0; list-style: none; }
+  [role=option] { padding: 4px; cursor: pointer; }
+</style></head>
+<body>
+  <main>
+    <h1>Skills Fixture</h1>
+    <form id="signup">
+      <label>Full name <input name="name"></label>
+      <label>Email <input name="email" type="email"></label>
+      <label>Country <select name="country"><option value="">Choose…</option><option value="fr">France</option><option value="de">Germany</option></select></label>
+      <label><input type="checkbox" name="terms"> I accept the terms</label>
+      <button type="submit">Register</button>
+    </form>
+    <p id="out" role="status"></p>
+
+    <h2>Size picker</h2>
+    <div id="size" role="combobox" aria-label="Size" aria-expanded="false" tabindex="0">Pick a size</div>
+    <ul id="size-list" role="listbox" hidden>
+      <li role="option">Small</li><li role="option">Medium</li><li role="option">Large</li>
+    </ul>
+    <a href="/page2.html">Go to second page</a>
+  </main>
+
+  <div id="cookie-banner" role="dialog" aria-label="Cookie consent">
+    We use cookies to improve your experience.
+    <button id="accept">Accept all</button> <button id="reject">Reject all</button>
+  </div>
+
+  <script>
+    window.consent = null;
+    document.getElementById('accept').onclick = () => { window.consent = 'accepted'; document.getElementById('cookie-banner').remove(); };
+    document.getElementById('reject').onclick = () => { window.consent = 'rejected'; document.getElementById('cookie-banner').remove(); };
+    const size = document.getElementById('size'), list = document.getElementById('size-list');
+    size.addEventListener('click', () => { list.hidden = !list.hidden; size.setAttribute('aria-expanded', String(!list.hidden)); });
+    list.addEventListener('click', (e) => {
+      const o = e.target.closest('[role=option]');
+      if (!o) return;
+      size.textContent = o.textContent; list.hidden = true; size.setAttribute('aria-expanded', 'false');
+    });
+    document.getElementById('signup').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = e.target;
+      document.getElementById('out').textContent = `Thanks ${f.name.value} <${f.email.value}> ${f.country.value} terms=${f.terms.checked}`;
+    });
+  </script>
+</body>
+</html>

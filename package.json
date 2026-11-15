@@ -1,0 +1,28 @@
+{
+  "name": "page-map",
+  "version": "0.1.0",
+  "description": "Chrome extension + MCP server that lets AI agents read and drive web pages through structure instead of screenshots.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run tests/unit",
+    "test:e2e": "vitest run tests/e2e",
+    "test:all": "vitest run",
+    "bench": "node scripts/bench.js",
+    "install-host": "node scripts/install-host.js",
+    "mcp": "node mcp/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "jsdom": "^31.0.1",
+    "playwright": "^1.65.1",
+    "vitest": "^5.1.0"
+  }
+}

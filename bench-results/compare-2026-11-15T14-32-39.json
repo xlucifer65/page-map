@@ -1,0 +1,105 @@
+{
+  "results": [
+    {
+      "task": "wikipedia",
+      "mode": "structure",
+      "run": 1,
+      "ok": true,
+      "answer": "Columba livia",
+      "expected": "Columba livia",
+      "tokens": 28569,
+      "input_tokens": 8,
+      "cache_creation": 8085,
+      "cache_read": 20139,
+      "output_tokens": 337,
+      "cost_usd": 0.0754798,
+      "seconds": 10.4,
+      "turns": 4,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"https://en.wikipedia.org\",\"new_tab\":true}",
+          "result_chars": 1760
+        },
+        {
+          "tool": "type",
+          "input": "{\"label\":\"Search Wikipedia\",\"text\":\"rock dove\",\"submit\":true}",
+          "result_chars": 1825
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"query\":\"Binomial\"}",
+          "result_chars": 965
+        }
+      ]
+    },
+    {
+      "task": "wikipedia",
+      "mode": "structure",
+      "run": 2,
+      "ok": true,
+      "answer": "Columba livia",
+      "expected": "Columba livia",
+      "tokens": 29646,
+      "input_tokens": 8,
+      "cache_creation": 3323,
+      "cache_read": 25912,
+      "output_tokens": 403,
+      "cost_usd": 0.039858399999999995,
+      "seconds": 10.9,
+      "turns": 4,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"https://en.wikipedia.org\",\"new_tab\":true}",
+          "result_chars": 1760
+        },
+        {
+          "tool": "type",
+          "input": "{\"label\":\"Search Wikipedia\",\"text\":\"rock dove\",\"submit\":true}",
+          "result_chars": 1825
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"query\":\"Binomial name\"}",
+          "result_chars": 3300
+        }
+      ]
+    },
+    {
+      "task": "wikipedia",
+      "mode": "structure",
+      "run": 3,
+      "ok": true,
+      "answer": "Columba livia",
+      "expected": "Columba livia",
+      "tokens": 28538,
+      "input_tokens": 8,
+      "cache_creation": 2290,
+      "cache_read": 25895,
+      "output_tokens": 345,
+      "cost_usd": 0.030431,
+      "seconds": 10.1,
+      "turns": 4,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"https://en.wikipedia.org\",\"new_tab\":true}",
+          "result_chars": 1760
+        },
+        {
+          "tool": "type",
+          "input": "{\"label\":\"Search Wikipedia\",\"text\":\"rock dove\",\"submit\":true}",
+          "result_chars": 1825
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"query\":\"Binomial\"}",
+          "result_chars": 965
+        }
+      ]
+    }
+  ],
+  "parallel": null,
+  "recipes": []
+}

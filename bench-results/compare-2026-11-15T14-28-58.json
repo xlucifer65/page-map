@@ -1,0 +1,328 @@
+{
+  "results": [
+    {
+      "task": "wikipedia",
+      "mode": "structure",
+      "run": 1,
+      "ok": true,
+      "answer": "Columba livia",
+      "expected": "Columba livia",
+      "tokens": 35445,
+      "input_tokens": 10,
+      "cache_creation": 8153,
+      "cache_read": 26826,
+      "output_tokens": 456,
+      "cost_usd": 0.07974919999999999,
+      "seconds": 13.1,
+      "turns": 5,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"https://en.wikipedia.org\",\"new_tab\":true}",
+          "result_chars": 1656
+        },
+        {
+          "tool": "find",
+          "input": "{\"query\":\"Search\",\"role\":\"searchbox\"}",
+          "result_chars": 125
+        },
+        {
+          "tool": "type",
+          "input": "{\"ref\":\"ecfj14\",\"text\":\"rock dove\",\"submit\":true}",
+          "result_chars": 1795
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"max_chars\":800,\"offset\":700}",
+          "result_chars": 997
+        }
+      ]
+    },
+    {
+      "task": "wikipedia",
+      "mode": "structure",
+      "run": 2,
+      "ok": true,
+      "answer": "Columba livia",
+      "expected": "Columba livia",
+      "tokens": 36973,
+      "input_tokens": 10,
+      "cache_creation": 2643,
+      "cache_read": 33861,
+      "output_tokens": 459,
+      "cost_usd": 0.0371362,
+      "seconds": 13.5,
+      "turns": 5,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"https://en.wikipedia.org\",\"new_tab\":true}",
+          "result_chars": 1706
+        },
+        {
+          "tool": "type",
+          "input": "{\"label\":\"Search Wikipedia\",\"text\":\"rock dove\",\"submit\":true}",
+          "result_chars": 1825
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"max_chars\":800,\"offset\":900}",
+          "result_chars": 997
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"max_chars\":400,\"offset\":550}",
+          "result_chars": 596
+        }
+      ]
+    },
+    {
+      "task": "wikipedia",
+      "mode": "structure",
+      "run": 3,
+      "ok": true,
+      "answer": "Columba livia",
+      "expected": "Columba livia",
+      "tokens": 37468,
+      "input_tokens": 10,
+      "cache_creation": 2884,
+      "cache_read": 34111,
+      "output_tokens": 463,
+      "cost_usd": 0.0391942,
+      "seconds": 15.3,
+      "turns": 5,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"https://en.wikipedia.org\",\"new_tab\":true}",
+          "result_chars": 1706
+        },
+        {
+          "tool": "type",
+          "input": "{\"label\":\"Search Wikipedia\",\"text\":\"rock dove\",\"submit\":true}",
+          "result_chars": 1825
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"max_chars\":1500,\"offset\":900}",
+          "result_chars": 1697
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"max_chars\":400,\"offset\":550}",
+          "result_chars": 596
+        }
+      ]
+    },
+    {
+      "task": "form",
+      "mode": "structure",
+      "run": 1,
+      "ok": true,
+      "answer": "PM-F1A2C9",
+      "expected": "valid code + correct fields",
+      "tokens": 18529,
+      "input_tokens": 6,
+      "cache_creation": 1366,
+      "cache_read": 16850,
+      "output_tokens": 307,
+      "cost_usd": 0.020462,
+      "seconds": 9.1,
+      "turns": 3,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"http://127.0.0.1:52844/form.html\",\"new_tab\":true}",
+          "result_chars": 318
+        },
+        {
+          "tool": "fill_form",
+          "input": "{\"fields\":{\"Full name\":\"Ada Lovelace\",\"Email\":\"ada@example.com\",\"Country\":\"Germany\",\"I accept the terms\":true},\"submit\":",
+          "result_chars": 475
+        }
+      ]
+    },
+    {
+      "task": "form",
+      "mode": "structure",
+      "run": 2,
+      "ok": true,
+      "answer": "PM-6CB486",
+      "expected": "valid code + correct fields",
+      "tokens": 18657,
+      "input_tokens": 6,
+      "cache_creation": 661,
+      "cache_read": 17662,
+      "output_tokens": 328,
+      "cost_usd": 0.0154044,
+      "seconds": 8.6,
+      "turns": 3,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"http://127.0.0.1:52844/form.html\",\"new_tab\":true}",
+          "result_chars": 446
+        },
+        {
+          "tool": "fill_form",
+          "input": "{\"fields\":{\"Full name\":\"Ada Lovelace\",\"Email\":\"ada@example.com\",\"Country\":\"Germany\",\"I accept the terms\":true},\"submit\":",
+          "result_chars": 475
+        }
+      ]
+    },
+    {
+      "task": "form",
+      "mode": "structure",
+      "run": 3,
+      "ok": true,
+      "answer": "PM-D3E5C7",
+      "expected": "valid code + correct fields",
+      "tokens": 18623,
+      "input_tokens": 6,
+      "cache_creation": 647,
+      "cache_read": 17663,
+      "output_tokens": 307,
+      "cost_usd": 0.014872600000000001,
+      "seconds": 9.6,
+      "turns": 3,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"http://127.0.0.1:52844/form.html\",\"new_tab\":true}",
+          "result_chars": 446
+        },
+        {
+          "tool": "fill_form",
+          "input": "{\"fields\":{\"Full name\":\"Ada Lovelace\",\"Email\":\"ada@example.com\",\"Country\":\"Germany\",\"I accept the terms\":true},\"submit\":",
+          "result_chars": 475
+        }
+      ]
+    }
+  ],
+  "parallel": null,
+  "recipes": [
+    {
+      "task": "wikipedia",
+      "phase": "learn",
+      "ok": true,
+      "answer": "Columba livia",
+      "tokens": 37622,
+      "cost_usd": 0.044941800000000004,
+      "seconds": 13.1,
+      "turns": 5,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"https://en.wikipedia.org\",\"new_tab\":true}",
+          "result_chars": 1736
+        },
+        {
+          "tool": "type",
+          "input": "{\"label\":\"Search Wikipedia\",\"text\":\"rock dove\",\"submit\":true}",
+          "result_chars": 1825
+        },
+        {
+          "tool": "read_text",
+          "input": "{\"max_chars\":1500}",
+          "result_chars": 1697
+        },
+        {
+          "tool": "save_recipe",
+          "input": "{\"name\":\"wiki-search\",\"description\":\"Search Wikipedia via the site's search box and open the matching article\"}",
+          "result_chars": 62
+        }
+      ]
+    },
+    {
+      "task": "wikipedia",
+      "phase": "replay",
+      "ok": true,
+      "answer": "Passer domesticus",
+      "tokens": 20688,
+      "cost_usd": 0.0326868,
+      "seconds": 11.5,
+      "turns": 3,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"https://en.wikipedia.org\",\"new_tab\":true}",
+          "result_chars": 1760
+        },
+        {
+          "tool": "type",
+          "input": "{\"label\":\"Search Wikipedia\",\"text\":\"house sparrow\",\"submit\":true}",
+          "result_chars": 2399
+        }
+      ]
+    },
+    {
+      "task": "wikipedia",
+      "phase": "cli",
+      "ok": true,
+      "tokens": 0,
+      "cost_usd": 0,
+      "seconds": 0.8,
+      "turns": 0,
+      "trace": []
+    },
+    {
+      "task": "form",
+      "phase": "learn",
+      "ok": true,
+      "answer": "PM-D80A29",
+      "tokens": 25413,
+      "cost_usd": 0.0260788,
+      "seconds": 11.4,
+      "turns": 4,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"http://127.0.0.1:52844/form.html\",\"new_tab\":true}",
+          "result_chars": 446
+        },
+        {
+          "tool": "fill_form",
+          "input": "{\"fields\":{\"Full name\":\"Ada Lovelace\",\"Email\":\"ada@example.com\",\"Country\":\"Germany\",\"I accept the terms\":true},\"submit\":",
+          "result_chars": 475
+        },
+        {
+          "tool": "save_recipe",
+          "input": "{\"name\":\"signup-form\",\"description\":\"Fill and submit the workshop signup form (full name, email, country, accept terms)\"",
+          "result_chars": 71
+        }
+      ]
+    },
+    {
+      "task": "form",
+      "phase": "replay",
+      "ok": true,
+      "answer": "PM-FC719C",
+      "tokens": 18716,
+      "cost_usd": 0.0216802,
+      "seconds": 8.9,
+      "turns": 3,
+      "trace": [
+        {
+          "tool": "navigate",
+          "input": "{\"url\":\"http://127.0.0.1:52844/form.html\",\"new_tab\":true}",
+          "result_chars": 509
+        },
+        {
+          "tool": "fill_form",
+          "input": "{\"fields\":{\"Full name\":\"Grace Hopper\",\"Email\":\"grace@example.com\",\"Country\":\"Germany\",\"I accept the terms\":true},\"submit",
+          "result_chars": 477
+        }
+      ]
+    },
+    {
+      "task": "form",
+      "phase": "cli",
+      "ok": true,
+      "tokens": 0,
+      "cost_usd": 0,
+      "seconds": 3,
+      "turns": 0,
+      "trace": []
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fixture Shop</title></head>
+<body>
+  <header><nav aria-label="Main"><a href="/shop.html">Home</a> <a href="/page2.html">Second page</a></nav></header>
+  <main>
+    <h1>Fixture Shop</h1>
+    <h2>Search</h2>
+    <form id="search-form">
+      <label for="q">Search products</label> <input id="q" name="q">
+      <button type="submit">Search</button>
+    </form>
+    <p id="result" role="status"></p>
+
+    <h2>Cart</h2>
+    <button id="add">Add item</button>
+    <ul id="cart"></ul>
+
+    <label>Country
+      <select id="country"><option value="fr">France</option><option value="de">Germany</option></select>
+    </label>
+
+    <h2>Login</h2>
+    <input type="password" aria-label="Password" value="hunter2-secret">
+
+    <canvas width="200" height="100" aria-label="Sales chart"></canvas>
+    <div style="height: 3000px"></div>
+    <button>Footer button far below</button>
+  </main>
+  <script>
+    document.getElementById('add').addEventListener('click', () => {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.textContent = 'Remove item ' + (document.querySelectorAll('#cart li').length + 1);
+      li.appendChild(b);
+      document.getElementById('cart').appendChild(li);
+    });
+    document.getElementById('search-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const r = document.getElementById('result');
+      r.textContent = '';
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = 'Result for ' + document.getElementById('q').value;
+      r.appendChild(a);
+    });
+  </script>
+</body>
+</html>
