@@ -32,6 +32,7 @@ The agent is the brain; Page-Map is its eyes and hands. Scripts do everything de
 git clone https://github.com/xlucifer65/page-map.git && cd page-map
 npm install
 npm run install-host          # registers the native host with Chrome
+npm run install-host -- --browser brave   # or chromium | edge | all (default: chrome)
 ```
 
 1. Chrome → `chrome://extensions` → **Developer mode** → **Load unpacked** → pick `./extension`

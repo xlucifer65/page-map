@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Registers the native messaging host with Chrome (user level, macOS/Linux).
 //   node scripts/install-host.js                      → real Chrome profile
+//   node scripts/install-host.js --browser chrome|chromium|brave|edge|all
 //   node scripts/install-host.js --hosts-dir <dir> --runtime-dir <dir>   → tests
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,11 +17,36 @@ export function extensionIdFromKey(b64) {
   return [...hex].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join('');
 }
 
+export const BROWSERS = ['chrome', 'chromium', 'brave', 'edge'];
+
+// User-level NativeMessagingHosts folders, relative to the home directory.
+// Chrome/Chromium: https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging#native-messaging-host-location
+// Edge: https://learn.microsoft.com/microsoft-edge/extensions-chromium/developer-guide/native-messaging
+// Brave uses the Chromium layout under its own profile folder (BraveSoftware/Brave-Browser).
+const HOST_DIRS = {
+  darwin: {
+    chrome: 'Library/Application Support/Google/Chrome',
+    chromium: 'Library/Application Support/Chromium',
+    brave: 'Library/Application Support/BraveSoftware/Brave-Browser',
+    edge: 'Library/Application Support/Microsoft Edge',
+  },
+  linux: {
+    chrome: '.config/google-chrome',
+    chromium: '.config/chromium',
+    brave: '.config/BraveSoftware/Brave-Browser',
+    edge: '.config/microsoft-edge',
+  },
+};
+
+export function hostsDirFor(browser = 'chrome', platform = process.platform, home = os.homedir()) {
+  const byPlatform = HOST_DIRS[platform];
+  if (!byPlatform) throw new Error('Windows needs a registry key; not supported by this script yet');
+  if (!byPlatform[browser]) throw new Error(`unknown browser "${browser}" (use ${BROWSERS.join('|')}|all)`);
+  return path.join(home, byPlatform[browser], 'NativeMessagingHosts');
+}
+
 function defaultHostsDir() {
-  const home = os.homedir();
-  if (process.platform === 'darwin') return path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts');
-  if (process.platform === 'linux') return path.join(home, '.config/google-chrome/NativeMessagingHosts');
-  throw new Error('Windows needs a registry key; not supported by this script yet');
+  return hostsDirFor('chrome');
 }
 
 // Homebrew's execPath is versioned (/opt/homebrew/Cellar/node/26.8.1/...), which breaks on upgrade.
@@ -60,8 +86,16 @@ export function install({ hostsDir = defaultHostsDir(), runtimeDir } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const r = install({ hostsDir: arg('--hosts-dir'), runtimeDir: arg('--runtime-dir') });
-  console.log(`extension id: ${r.id}\nhost manifest: ${r.manifestPath}\nwrapper: ${r.wrapper}`);
+  const browser = arg('--browser') || 'chrome';
+  if (browser !== 'all' && !BROWSERS.includes(browser)) { console.error(`unknown browser "${browser}" (use ${BROWSERS.join('|')}|all)`); process.exit(1); }
+  const explicit = arg('--hosts-dir');
+  const targets = explicit ? [[browser, explicit]] : (browser === 'all' ? BROWSERS : [browser]).map((b) => [b, hostsDirFor(b)]);
+  let r;
+  for (const [b, hostsDir] of targets) {
+    r = install({ hostsDir, runtimeDir: arg('--runtime-dir') });
+    console.log(`${b}: host manifest ${r.manifestPath}`);
+  }
+  console.log(`extension id: ${r.id}\nwrapper: ${r.wrapper}`);
   console.log('\nNext: load ./extension in chrome://extensions (Developer mode → Load unpacked), then:');
   console.log(`  claude mcp add -s user page-map -- ${stableNode()} ${path.join(root, 'mcp/server.js')}`);
 }
