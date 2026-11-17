@@ -35,6 +35,7 @@
     '1password.com', 'lastpass.com', 'bitwarden.com', 'dashlane.com',
     // '!' entries are exceptions that win over the patterns above.
     '!worldbank.org', '!bankrate.com', '!databank.*',
+    '!teams.microsoft.com', '!teams.cloud.microsoft', '!teams.live.com', // Teams: allowed (user choice)
   ];
   // Patterns without '*' also cover subdomains: 'chase.com' blocks 'secure.chase.com'.
 
@@ -706,10 +707,23 @@
   const ACCEPT = /^(accept( all)?( cookies)?|agree|i agree|allow( all)?( cookies)?|got it|ok|okay|i understand|understood|tout accepter|j'accepte|accepter|alle akzeptieren|akzeptieren)$/i;
   const CLOSE = /^(close|dismiss|no,? thanks|not now|maybe later|skip|×|x|✕)$/i;
 
-  function findInterruption(win, doc) {
-    const sel = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open], [id*="cookie" i], [class*="cookie" i], [id*="consent" i], [class*="consent" i], [id*="gdpr" i], [class*="cmp" i], [id*="onetrust" i], [id*="didomi" i], [class*="newsletter" i], [class*="popup" i], [class*="modal" i]';
-    let candidates;
-    try { candidates = Array.from(doc.querySelectorAll(sel)); } catch (_) { return null; }
+  const OVERLAY_SEL = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open], [id*="cookie" i], [class*="cookie" i], [id*="consent" i], [class*="consent" i], [id*="gdpr" i], [class*="cmp" i], [id*="onetrust" i], [id*="didomi" i], [class*="newsletter" i], [class*="popup" i], [class*="modal" i]';
+  // Overlay-like elements currently in the DOM (snapshot before an action, to spot dialogs the action opened).
+  function overlayBoxes(doc) {
+    try { return Array.from(doc.querySelectorAll(OVERLAY_SEL)); } catch (_) { return []; }
+  }
+
+  // opts.keep: a Set of overlay elements that existed before the agent's action. When given, a box that is
+  // NOT in it (i.e. the action itself opened it, like an "Apply" form) is never auto-closed.
+  function findInterruption(win, doc, opts = {}) {
+    let candidates = overlayBoxes(doc);
+    if (!candidates.length) return null;
+    if (opts.keep) candidates = candidates.filter((c) => opts.keep.has(c));
+    // opts.target: the element the agent just acted on. An overlay that contains it is where the agent is
+    // working (a multi-step form, a modal editor), so it is never an interruption.
+    if (opts.target) candidates = candidates.filter((c) => !c.contains(opts.target));
+    // opts.inUse: overlays that contained the target BEFORE the action (the target itself may be re-rendered away).
+    if (opts.inUse) candidates = candidates.filter((c) => !opts.inUse.has(c));
     // Outermost first, visible, small enough to be an overlay (not the whole app shell).
     candidates = candidates.filter((c) => !candidates.some((o) => o !== c && o.contains(c)) && visible(c, win));
     for (const box of candidates.slice(0, 10)) {
@@ -733,7 +747,7 @@
 
   root.PageMapCore = {
     nextBackoff,
-    findOption, resolveField, findInterruption,
+    findOption, resolveField, findInterruption, overlayBoxes,
     createRefs, snapshot, format, formatItem, outline, readText, grepText, find, diff, formatDiff, lineMap,
     isBlocked, isSecret, looksLikeCard, maskCards, roleOf, nameOf, act, DEFAULT_BLOCKLIST,
   };

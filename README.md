@@ -60,6 +60,7 @@ Windows isn't supported yet (needs a registry-based host install) — PRs welcom
 | `click` / `type` / `select_option` | by ref **or label** (`type(label="Search", text="…", submit=true)`); returns only what changed, or the new page if it navigated |
 | `fill_form(fields, submit)` | fills text fields, dropdowns (native and custom) and checkboxes by label in one call |
 | `batch(steps)` | several steps in one call; stops at the first failing step |
+| `upload_file(paths, ref/label)` | attaches local files to a file input, a "Choose file" button (no OS picker opens) or a drag-and-drop zone; large files are sent in chunks |
 | `save_recipe` / `run_recipe` | save a finished task as label-based steps; replay with new values, step-checked |
 | `list_tabs`, `screenshot` (fallback), `stats` | tabs; image for canvas apps; token/latency metrics |
 
@@ -125,6 +126,9 @@ Recipes (learn once, replay with **new** values):
 - Password, card/CSC, one-time-code, PIN, API-key/token field values — and any Luhn-valid card number — are never read (`<secret>`); `type` refuses secret fields unless `allow_secret=true`.
 - Blocklist (email, messaging, payments, banks, password managers by default; plain patterns cover subdomains) — checked in the service worker *and* against the page's real URL in the content script, so redirects can't slip through. Blocked tabs show only their host in `list_tabs`. Edit in the extension's **Options** page; agents can't change it.
 - Every result and every extension error is prefixed with a marker telling the agent that page text is untrusted data, not instructions.
+- Uploads: agents can only upload files from `~/Desktop`, `~/Documents`, `~/Downloads` (or the folders in
+  `PAGEMAP_UPLOAD_DIRS`, colon-separated). Hidden files/folders (`.ssh`, `.env`…), `Library`, key/certificate files
+  and symlinks pointing elsewhere are always refused — before the disk is even checked, so pages can't probe what exists.
 - Local only: unix socket `~/.page-map/pagemap.sock` (0600 in a 0700 dir). No TCP port, no network calls.
 
 ## Tests

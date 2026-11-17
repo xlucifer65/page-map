@@ -14,6 +14,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pme-'));
 const rt = path.join(dir, 'rt');
 const profile = path.join(dir, 'profile');
+const upDir = path.join(dir, 'uploads');   // the only folder agents may upload from in these tests
+fs.mkdirSync(path.join(upDir, '.secret'), { recursive: true });
+fs.writeFileSync(path.join(upDir, 'hello.txt'), 'hello upload world');
+fs.writeFileSync(path.join(upDir, 'big.bin'), Buffer.alloc(2.5 * 1024 * 1024, 120)); // > 1 MB: forces chunking
+fs.writeFileSync(path.join(upDir, '.secret', 'token.txt'), 'nope');
+fs.writeFileSync(path.join(dir, 'outside.txt'), 'nope');
 let server, base, ctx, client, sw, page;
 
 const textOf = (r) => r.content.map((c) => c.text || '').join('');
@@ -46,7 +52,7 @@ beforeAll(async () => {
   await client.connect(new StdioClientTransport({
     command: process.execPath,
     args: [path.join(root, 'mcp/server.js')],
-    env: { ...process.env, PAGEMAP_DIR: rt },
+    env: { ...process.env, PAGEMAP_DIR: rt, PAGEMAP_UPLOAD_DIRS: upDir },
     stderr: 'pipe',
   }));
 
@@ -271,6 +277,34 @@ describe('F4 end-to-end', () => {
     const r = await call('run_recipe', { name: 'signup' });
     expect(r.isError).toBe(true);
     expect(textOf(r)).toMatch(/STOPPED at step 2 \(type "Field that was renamed"\)/);
+  });
+
+  it('upload: plain file input (by label)', async () => {
+    await call('navigate', { url: `${base}/upload.html` });
+    const t = textOf(await call('upload_file', { label: 'Plain file', paths: [path.join(upDir, 'hello.txt')] }));
+    expect(t).toMatch(/attached via file input: hello\.txt \(0 KB\)/);
+    expect(await page.textContent('#plain-out')).toBe('hello.txt:18:hello upload');
+  });
+
+  it('upload: LinkedIn-style "Choose file" button that creates a detached input (no OS picker)', async () => {
+    const t = textOf(await call('upload_file', { label: 'Choose file', paths: [path.join(upDir, 'hello.txt')] }));
+    expect(t).toMatch(/attached via picker button/);
+    expect(await page.textContent('#button-out')).toBe('hello.txt:18:hello upload');
+  });
+
+  it('upload: drag-and-drop zone, with a 2.5 MB file sent in chunks', async () => {
+    const t = textOf(await call('upload_file', { label: 'Drop files here', paths: [path.join(upDir, 'big.bin')] }));
+    expect(t).toMatch(/attached via drop zone: big\.bin \(2\.5 MB\)/);
+    expect(await page.textContent('#drop-out')).toBe(`big.bin:${2.5 * 1024 * 1024}:xxxxxxxxxxxx`);
+  });
+
+  it('upload: refuses hidden files and files outside the allowed folders', async () => {
+    const hidden = await call('upload_file', { label: 'Plain file', paths: [path.join(upDir, '.secret', 'token.txt')] });
+    expect(hidden.isError).toBe(true);
+    expect(textOf(hidden)).toMatch(/hidden files/);
+    const outside = await call('upload_file', { label: 'Plain file', paths: [path.join(dir, 'outside.txt')] });
+    expect(outside.isError).toBe(true);
+    expect(textOf(outside)).toMatch(/outside upload folders/);
   });
 
   it('parallel: two agent sessions drive two tabs at the same time without mixing them up', async () => {

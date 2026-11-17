@@ -71,6 +71,7 @@ Each part is owned by one "expertise". Every item has a test or check that prove
 - [x] H6 Multi-session host: parallel agents, sticky per-session tabs → e2e (two sessions at once)
 - [x] H7 Recipes + site memory on disk; step-checked replay; zero-token CLI → unit + e2e + live benchmark
 - [x] H8 Extension self-reload for updates (`scripts/reload-ext.js`) → live
+- [x] H9 `upload_file`: file inputs, picker buttons (MAIN-world hook, no OS dialog), drop zones; chunked >1 MB; folder allowlist + secret-file refusal → unit + e2e + live
 
 ## Later (not in this build)
 - Same-uid socket squatting (monitor #14): accepted risk, any same-user process can already read Chrome's profile

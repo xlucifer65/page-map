@@ -31,11 +31,21 @@
 
   // Generic skill: close cookie banners / consent walls / newsletter popups before they eat turns.
   // Returns a note for the agent, or '' when nothing was closed. args.auto_dismiss=false disables it.
-  async function dismissInterruptions(args) {
+  // before = { boxes, url } captured before an action: dialogs the action itself opened on the same page
+  // (e.g. LinkedIn "Easy Apply") are what the agent asked for, so they are left open.
+  async function dismissInterruptions(args, before) {
     if (args.auto_dismiss === false || args.quiet) return '';
     const notes = [];
+    // Same page = same origin + path: SPAs often rewrite only the query string when a dialog opens.
+    const samePage = (a, b) => { try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && x.pathname === y.pathname; } catch (_) { return a === b; } };
+    const keep = before && samePage(location.href, before.url) ? new Set(before.boxes) : null;
+    const opts = {};
+    if (keep) opts.keep = keep;
+    if (before && before.target) opts.inUse = new Set(before.boxes.filter((b) => b.contains(before.target)));
+    if (before && before.target && before.target.isConnected) opts.target = before.target;
+    else if (before && document.activeElement && document.activeElement !== document.body) opts.target = document.activeElement; // batch / fill_form: where focus ended up
     for (let i = 0; i < 2; i++) { // some sites stack two (consent → newsletter)
-      const hit = C.findInterruption(window, document);
+      const hit = C.findInterruption(window, document, opts);
       if (!hit) break;
       hit.button.click();
       notes.push(`auto-closed ${hit.kind} via "${hit.label}"`);
@@ -236,19 +246,104 @@
         }
         const before = fullMap();
         const urlBefore = location.href;
+        const boxesBefore = C.overlayBoxes(document);
+        const targetEl = args.ref != null ? refs.resolve(args.ref) : null;
         const r = await doAction(cmd, args);
         if (!r.ok) return r;
         await settle();
         if (args.quiet) return { ok: true, text: r.info }; // vision mode: no structure
-        const note = await dismissInterruptions(args);
+        const note = await dismissInterruptions(args, { boxes: boxesBefore, url: urlBefore, target: targetEl });
         const after = fullMap();
         baseline = after;
         const nav = location.href !== urlBefore ? `\nurl → ${location.href}` : '';
         return { ok: true, steps: r.step ? [r.step] : [], text: `${note}${r.info}${nav}\n${C.formatDiff(C.diff(before, after), 30)}` };
       }
+      case 'upload': {
+        const files = (args.files || []).map((f) => {
+          const bin = atob(f.b64 || '');
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          return new File([bytes], f.name, { type: f.type || 'application/octet-stream' });
+        });
+        const dt = new DataTransfer();
+        files.forEach((f) => dt.items.add(f));
+        const kb = (n) => (n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+        const list = files.map((f) => `${f.name} (${kb(f.size)})`).join(', ');
+        const before = fullMap();
+        const urlBefore = location.href;
+
+        let el = null;
+        if (args.ref != null || args.label != null) {
+          const t = target({ ref: args.ref, label: args.label });
+          if (!t.error) el = refs.resolve(t.ref);
+          else if (args.label != null) {
+            // Drop zones are often plain <div>s (not "interactive"): match aria-label/title/short visible text.
+            const want = String(args.label).trim().toLowerCase();
+            const cands = Array.from(document.querySelectorAll('[aria-label], [title], div, section, label, span'))
+              .filter((x) => {
+                const n = (x.getAttribute('aria-label') || x.getAttribute('title') || (x.textContent || '').trim()).toLowerCase();
+                return n && n.length <= 120 && n.includes(want) && x.getBoundingClientRect().width > 0;
+              });
+            // Most specific (smallest) match wins.
+            cands.sort((a, b) => a.getBoundingClientRect().width * a.getBoundingClientRect().height - b.getBoundingClientRect().width * b.getBoundingClientRect().height);
+            el = cands[0] || null;
+            if (!el) return { ok: false, error: t.error };
+          } else return { ok: false, error: t.error };
+        }
+        const fileInputs = () => Array.from(document.querySelectorAll('input[type=file]'));
+        let input = null;
+        let how = '';
+        if (el && el.tagName === 'INPUT' && el.type === 'file') { input = el; how = 'file input'; }
+        else if (el && (el.querySelector && el.querySelector('input[type=file]'))) { input = el.querySelector('input[type=file]'); how = 'file input inside target'; }
+        else if (el && el.tagName === 'LABEL' && el.control && el.control.type === 'file') { input = el.control; how = 'labelled file input'; }
+        else if (el) {
+          // A "Choose file" button: let the page create/open its input, captured by the MAIN-world hook.
+          const known = new Set(fileInputs());
+          document.documentElement.setAttribute('data-pm-arm', '1');
+          el.click();
+          for (let i = 0; i < 40 && !input; i++) {
+            await new Promise((r) => setTimeout(r, 50));
+            input = document.querySelector('input[type=file][data-pm-upload]') || fileInputs().find((x) => !known.has(x)) || null;
+          }
+          document.documentElement.removeAttribute('data-pm-arm');
+          if (input) { input.removeAttribute('data-pm-upload'); how = 'picker button'; }
+        } else {
+          const all = fileInputs();
+          if (all.length === 1) { input = all[0]; how = 'the page\'s only file input'; }
+        }
+
+        if (input) {
+          if (!input.multiple && files.length > 1) return { ok: false, error: 'this upload control accepts one file' };
+          input.files = dt.files;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          // No input at all: treat the target (or an obvious drop area) as a drag-and-drop zone.
+          const zone = el || document.querySelector('[class*="drop" i], [id*="drop" i], [data-testid*="drop" i], [aria-label*="drop" i]');
+          if (!zone) return { ok: false, error: 'no upload control found (pass the ref/label of the file input, upload button or drop zone)' };
+          for (const type of ['dragenter', 'dragover', 'drop']) {
+            zone.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+          }
+          how = 'drop zone';
+        }
+        let warn = '';
+        if (input && input.accept) {
+          const acc = input.accept.split(',').map((s) => s.trim().toLowerCase());
+          const bad = files.filter((f) => !acc.some((a) => a === f.type || (a.endsWith('/*') && f.type.startsWith(a.slice(0, -1))) || f.name.toLowerCase().endsWith(a)));
+          if (bad.length) warn = `\nwarning: the control accepts ${input.accept}; ${bad.map((f) => f.name).join(', ')} may be rejected`;
+        }
+        await settle(2500, 250);
+        const after = fullMap();
+        baseline = after;
+        const nav = location.href !== urlBefore ? `\nurl → ${location.href}` : '';
+        return { ok: true, text: `attached via ${how}: ${list}${warn}${nav}\n${C.formatDiff(C.diff(before, after), 30)}` };
+      }
       case 'batch': case 'fill_form': {
         const before = fullMap();
         const urlBefore = location.href;
+        const boxesBefore = C.overlayBoxes(document);
+        const firstStep = cmd === 'batch' ? (args.steps || [])[0] : null;
+        const batchTarget = firstStep ? (firstStep.ref != null ? refs.resolve(firstStep.ref) : (firstStep.label ? (target(firstStep).ref != null ? refs.resolve(target(firstStep).ref) : null) : null)) : null;
         let steps = cmd === 'batch' ? (args.steps || []) : formSteps(args.fields, args.submit);
         const submitStep = steps.length && steps[steps.length - 1].action === '__submit' ? steps.pop() : null;
         const res = await runSteps(steps);
@@ -257,7 +352,7 @@
           if (s2.ok) { res.log.push(`${res.log.length + 1}. ${s2.info}`); if (s2.step) res.recorded.push(s2.step); } else res.error = s2.error;
         }
         await settle();
-        const note = await dismissInterruptions(args);
+        const note = await dismissInterruptions(args, { boxes: boxesBefore, url: urlBefore, target: batchTarget || undefined });
         const after = fullMap();
         baseline = after;
         const nav = location.href !== urlBefore ? `\nurl → ${location.href}` : '';

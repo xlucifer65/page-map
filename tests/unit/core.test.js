@@ -368,6 +368,27 @@ describe('generic skills', () => {
     const b = page(`<div class="modal">Subscribe to our newsletter! <button aria-label="Close">×</button><button>Subscribe</button></div>`);
     expect(b.C.findInterruption(b.win, b.doc)).toMatchObject({ kind: 'popup', label: 'Close' });
   });
+  it('never closes a dialog the agent just opened (keep = overlays present before the action)', () => {
+    const p = page(`<div role="dialog">Apply to Acme. See our privacy policy. <button aria-label="Dismiss">×</button><button>Next</button></div>`);
+    expect(p.C.findInterruption(p.win, p.doc)).toMatchObject({ label: 'Dismiss' }); // no snapshot: old behaviour
+    expect(p.C.findInterruption(p.win, p.doc, { keep: new Set() })).toBeNull(); // opened by the action: left alone
+    const existing = new Set(p.C.overlayBoxes(p.doc));
+    expect(p.C.findInterruption(p.win, p.doc, { keep: existing })).toMatchObject({ label: 'Dismiss' }); // was already there
+  });
+  it('never closes the overlay that contains the element the agent acted on', () => {
+    const p = page(`<div role="dialog">Apply. Privacy policy. <button aria-label="Dismiss">×</button><button id="next">Next</button></div>`);
+    const next = p.doc.getElementById('next');
+    const keep = new Set(p.C.overlayBoxes(p.doc));
+    expect(p.C.findInterruption(p.win, p.doc, { keep, target: next })).toBeNull();
+  });
+  it('keeps an in-use overlay even when the clicked element was re-rendered away', () => {
+    const p = page(`<div role="dialog">Apply. Privacy policy. <button aria-label="Dismiss">×</button><footer><button id="next">Next</button></footer></div>`);
+    const boxes = p.C.overlayBoxes(p.doc);
+    const next = p.doc.getElementById('next');
+    const inUse = new Set(boxes.filter((b) => b.contains(next)));
+    next.parentElement.innerHTML = '<button>Review</button>'; // SPA swaps the footer
+    expect(p.C.findInterruption(p.win, p.doc, { keep: new Set(boxes), inUse })).toBeNull();
+  });
   it('ignores ordinary dialogs and hidden banners', () => {
     const p = page(`<div role="dialog">Edit profile <button>Save</button></div><div id="cookie-x" style="display:none">cookies <button>Accept</button></div>`);
     expect(p.C.findInterruption(p.win, p.doc)).toBeNull();

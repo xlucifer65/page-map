@@ -12,5 +12,6 @@ to the extension or agent, socket/permission problems, supply-chain risks in rel
 - Password / card / one-time-code / API-key values are never read; Luhn-valid card numbers are masked anywhere.
 - Blocklisted sites (mail, banks, payments, password managers by default) return nothing.
 - Every result is prefixed as untrusted page content (prompt-injection defence).
+- Uploads only from allowed folders; hidden, Library and key/secret files are always refused, without revealing whether they exist.
 - Local only: per-session unix sockets (0600) in `~/.page-map` (0700); no network listeners.
 - Releases are built by CI from tagged `main` commits only.

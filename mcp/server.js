@@ -8,6 +8,8 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod/v4';
 import { Bridge } from './bridge.js';
 import * as memory from './recipes.js';
+import * as uploadPolicy from './upload-policy.js';
+import crypto from 'node:crypto';
 import { runtimeDir, sessionSocket } from '../host/paths.js';
 
 const log = (...a) => process.stderr.write(`[page-map] ${a.join(' ')}\n`);
@@ -136,11 +138,11 @@ function createServer() {
   s.registerTool('list_tabs', { description: 'List tabs.', inputSchema: z.object({}) },
     async () => call('list_tabs', 'list_tabs', {}));
 
-  s.registerTool('outline', { description: 'Page summary: headings/landmarks with refs, plus a text preview. Start here.', inputSchema: z.object({ tab }) },
+  s.registerTool('outline', { description: 'Page summary with refs + text preview. Start here.', inputSchema: z.object({ tab }) },
     async (a) => call('outline', 'outline', a));
 
   s.registerTool('read_text', {
-    description: 'Main page text as markdown. query= returns only matching lines (fast lookup); offset continues.',
+    description: 'Page text as markdown; query= returns only matching lines.',
     inputSchema: z.object({ query: z.string().optional(), offset: z.number().optional(), max_chars: z.number().optional(), tab }),
   }, async (a) => call('read_text', 'read_text', a));
 
@@ -168,14 +170,46 @@ function createServer() {
     text: z.string().optional(), option: z.string().optional(), checked: z.boolean().optional(), submit: z.boolean().optional(),
   });
   s.registerTool('batch', {
-    description: 'Run several steps in one call; target by ref or label. Stops at first failure; returns changes.',
+    description: 'Several steps in one call (ref or label); stops at first failure.',
     inputSchema: z.object({ steps: z.array(step), tab }),
   }, async (a) => call('batch', 'batch', a));
 
   s.registerTool('fill_form', {
-    description: 'Fill fields by label: {"Email": "a@b.c", "Country": "Germany", "Accept terms": true}. submit=true submits.',
+    description: 'Fill fields by label: {"Email": "a@b.c", "Terms": true}; submit=true submits.',
     inputSchema: z.object({ fields: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])), submit: z.boolean().optional(), tab }),
   }, async (a) => call('fill_form', 'fill_form', a));
+
+  s.registerTool('upload_file', {
+    description: 'Attach local files to a file input, upload button or drop zone (ref or label).',
+    inputSchema: z.object({ paths: z.array(z.string()), ref: ref.optional(), label: z.string().optional(), tab }),
+  }, async (a) => {
+    // Policy first: only files in allowed folders, never hidden/secret files (prompt-injection exfiltration guard).
+    const files = [];
+    let total = 0;
+    for (const p of a.paths || []) {
+      const c = uploadPolicy.checkFile(p);
+      if (!c.ok) return fail(c.error);
+      total += c.size;
+      files.push(c);
+    }
+    if (!files.length) return fail('paths required');
+    if (total > uploadPolicy.MAX_TOTAL_BYTES) return fail(`total size over ${uploadPolicy.MAX_TOTAL_BYTES / 1048576} MB`);
+    const id = crypto.randomUUID();
+    try {
+      if (!bridge.connected) await bridge.waitForConnection(3000);
+      await bridge.request('upload_begin', { id, files: files.map((f) => ({ name: f.name, type: uploadPolicy.mimeOf(f.name), size: f.size })) });
+      // Chrome caps host→extension messages at 1 MB: send ≤699,000-byte chunks (a multiple of 3 so base64 pieces concatenate).
+      const CHUNK = 699000;
+      for (let i = 0; i < files.length; i++) {
+        const buf = fs.readFileSync(files[i].real);
+        for (let off = 0; off < buf.length || off === 0; off += CHUNK) {
+          await bridge.request('upload_chunk', { id, index: i, data: buf.subarray(off, off + CHUNK).toString('base64') });
+          if (buf.length === 0) break;
+        }
+      }
+    } catch (e) { return fail(e.message); }
+    return call('upload_file', 'upload_commit', { id, ref: a.ref, label: a.label, tab: a.tab });
+  });
 
   s.registerTool('select_option', { description: 'Pick a dropdown option (by ref or label).', inputSchema: z.object({ ref: ref.optional(), label: z.string().optional(), option: z.string(), tab }) },
     async (a) => call('select_option', 'select_option', a));
@@ -189,7 +223,7 @@ function createServer() {
     async (a) => call('screenshot', 'screenshot', a));
 
   s.registerTool('save_recipe', {
-    description: 'After a task succeeds: save its steps (since last navigate) under a name for replay.',
+    description: 'Save the steps since the last navigate as a named recipe.',
     inputSchema: z.object({ name: z.string(), description: z.string().optional() }),
   }, async (a) => {
     try {
@@ -199,7 +233,7 @@ function createServer() {
   });
 
   s.registerTool('run_recipe', {
-    description: 'Replay a saved recipe; values override typed fields by label. Stops at a step that no longer matches.',
+    description: 'Replay a saved recipe; values override typed fields by label.',
     inputSchema: z.object({ name: z.string(), values: z.record(z.string(), z.string()).optional(), tab }),
   }, async (a) => {
     const t0 = Date.now();

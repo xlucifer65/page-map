@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Upload Fixture</title>
+<style>#dropzone { border: 2px dashed #999; padding: 40px; margin: 20px 0; }</style></head>
+<body>
+  <main>
+    <h1>Upload Fixture</h1>
+    <label>Plain file <input type="file" id="plain"></label>
+    <p id="plain-out" role="status"></p>
+
+    <!-- LinkedIn-style: the input only exists after clicking, and is never attached to the page -->
+    <button id="choose">Choose file</button>
+    <p id="button-out" role="status"></p>
+
+    <div id="dropzone" aria-label="Drop files here">Drop files here</div>
+    <p id="drop-out" role="status"></p>
+  </main>
+  <script>
+    const show = async (out, files) => {
+      const parts = [];
+      for (const f of files) parts.push(`${f.name}:${f.size}:${(await f.slice(0, 12).text())}`);
+      document.getElementById(out).textContent = parts.join(' | ');
+    };
+    document.getElementById('plain').addEventListener('change', (e) => show('plain-out', e.target.files));
+    document.getElementById('choose').addEventListener('click', () => {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'application/pdf,text/plain';
+      inp.addEventListener('change', () => show('button-out', inp.files));
+      inp.click();
+    });
+    const dz = document.getElementById('dropzone');
+    dz.addEventListener('dragover', (e) => e.preventDefault());
+    dz.addEventListener('drop', (e) => { e.preventDefault(); show('drop-out', e.dataTransfer.files); });
+  </script>
+</body>
+</html>

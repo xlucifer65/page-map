@@ -103,19 +103,21 @@ async function toContent(tab, cmd, args) {
     }
     if (/message (port|channel) closed|back\/forward cache|page.*(unload|moved)/i.test(m)) {
       // The action navigated away. Report the new page instead.
-      return await afterNavigation(tab.id, blocklist);
+      return await afterNavigation(tab.id, blocklist, true);
     }
     throw e;
   }
 }
 
 // The action loaded a new page: hand back the new page's outline right away (saves the agent a turn).
-async function afterNavigation(tabId, blocklist) {
+// afterAction: the action already ran the popup auto-closer with full context (what it opened, where the agent
+// was working), so this outline must not run it again blindly — it would close the dialog the action opened.
+async function afterNavigation(tabId, blocklist, afterAction = false) {
   await new Promise((r) => setTimeout(r, 100));
   await waitForLoad(tabId);
   const t = await chrome.tabs.get(tabId);
   if (C.isBlocked(t.url || '', blocklist)) return { ok: true, text: 'page navigated → [blocked site]' };
-  const o = await toContent(t, 'outline', {});
+  const o = await toContent(t, 'outline', afterAction ? { auto_dismiss: false } : {});
   return { ok: true, text: `page navigated → ${t.url}\n${o.ok ? o.text : o.error}` };
 }
 
@@ -138,10 +140,51 @@ function withSteps(tabId, cmd, res) {
   return { ...res, steps };
 }
 
+// In-flight uploads: files arrive from the MCP server in chunks (Chrome caps host messages at 1 MB).
+const uploads = new Map();
+
+// MAIN-world hook: when armed (data-pm-arm on <html>), a page's own fileInput.click()/showPicker()
+// is captured instead of opening the OS file picker — the input is marked (and attached if detached)
+// so the content script can fill it. Normal user clicks are untouched (hook only fires when armed).
+function installUploadHook() {
+  if (window.__pmUploadHook) return;
+  window.__pmUploadHook = true;
+  const capture = (inp) => {
+    const root = document.documentElement;
+    if (inp.type !== 'file' || root.getAttribute('data-pm-arm') !== '1') return false;
+    root.removeAttribute('data-pm-arm');
+    if (!inp.isConnected) { inp.style.display = 'none'; root.appendChild(inp); }
+    inp.setAttribute('data-pm-upload', '1');
+    return true;
+  };
+  const click = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function () { if (capture(this)) return; return click.call(this); };
+  const show = HTMLInputElement.prototype.showPicker;
+  if (show) HTMLInputElement.prototype.showPicker = function () { if (capture(this)) return; return show.call(this); };
+}
+
 async function run(cmd, args) {
+  if (cmd === 'upload_begin') {
+    if (!args.id || !Array.isArray(args.files)) return { ok: false, error: 'bad upload' };
+    uploads.set(args.id, { files: args.files.map((f) => ({ name: String(f.name), type: String(f.type || ''), chunks: [] })) });
+    setTimeout(() => uploads.delete(args.id), 60000);
+    return { ok: true, text: 'ready' };
+  }
+  if (cmd === 'upload_chunk') {
+    const u = uploads.get(args.id);
+    if (!u || !u.files[args.index]) return { ok: false, error: 'unknown upload' };
+    u.files[args.index].chunks.push(String(args.data || ''));
+    return { ok: true, text: 'ok' };
+  }
   if (cmd === 'reload_extension') { // dev: pick up new code (scripts/reload-ext.js)
     setTimeout(() => chrome.runtime.reload(), 100);
     return { ok: true, text: 'reloading' };
+  }
+  if (cmd === 'close_tabs') { // maintenance: close specific tabs by id (never "all")
+    const ids = (args.ids || []).map(Number).filter(Number.isInteger);
+    if (!ids.length) return { ok: false, error: 'ids required' };
+    await chrome.tabs.remove(ids);
+    return { ok: true, text: `closed ${ids.length} tabs` };
   }
   if (cmd === 'hello') return { ok: true, text: `page-map extension ${chrome.runtime.getManifest().version}` };
 
@@ -208,6 +251,15 @@ async function run(cmd, args) {
     return { ok: true, image: btoa(bin), mime: 'image/jpeg', w: vp.w, h: vp.h };
   }
 
+  if (cmd === 'upload_commit') {
+    const u = uploads.get(args.id);
+    uploads.delete(args.id);
+    if (!u) return { ok: false, error: 'upload expired or unknown' };
+    try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: installUploadHook }); } catch (_) {}
+    const files = u.files.map((f) => ({ name: f.name, type: f.type, b64: f.chunks.join('') }));
+    return await toContent(tab, 'upload', { ref: args.ref, label: args.label, files });
+  }
+
   const allowed = new Set(['outline', 'read_text', 'read_page', 'find', 'changes', 'click', 'type', 'select_option', 'scroll',
     'check', 'batch', 'fill_form', 'click_xy', 'type_text']);
   if (!allowed.has(cmd)) return { ok: false, error: `unknown command ${cmd}` };
@@ -218,8 +270,10 @@ async function run(cmd, args) {
   if (ACTIONS.has(cmd) && !args.quiet && res && res.ok && !/^page navigated/.test(res.text || '')) {
     await new Promise((r) => setTimeout(r, 150));
     const t = await chrome.tabs.get(tab.id);
-    if (t.status === 'loading' || (t.url && t.url.split('#')[0] !== String(urlBefore).split('#')[0])) {
-      const nav = await afterNavigation(tab.id, await getBlocklist());
+    // Only a real page change counts: SPAs rewrite the query string when a dialog opens (same origin + path).
+    const page = (u) => { try { const x = new URL(u); return x.origin + x.pathname; } catch (_) { return String(u).split('#')[0]; } };
+    if (t.status === 'loading' || (t.url && page(t.url) !== page(urlBefore))) {
+      const nav = await afterNavigation(tab.id, await getBlocklist(), true);
       return { ...res, url: (await chrome.tabs.get(tab.id)).url, text: `${res.text}\n${nav.text}` };
     }
   }

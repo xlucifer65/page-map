@@ -73,7 +73,7 @@ describe('C1/C2 MCP server', () => {
   it('exposes the full tool set', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['batch', 'click', 'fill_form', 'find', 'list_tabs', 'navigate', 'outline', 'read_page', 'read_text', 'run_recipe', 'save_recipe', 'screenshot', 'select_option', 'stats', 'type'].sort());
+      ['batch', 'click', 'fill_form', 'find', 'list_tabs', 'navigate', 'outline', 'read_page', 'read_text', 'run_recipe', 'save_recipe', 'screenshot', 'select_option', 'stats', 'type', 'upload_file'].sort());
     for (const t of tools) expect(t.description.length).toBeGreaterThan(5);
     // Tool definitions are re-sent every turn: keep the whole set small.
     expect(JSON.stringify(tools).length).toBeLessThan(5000);
