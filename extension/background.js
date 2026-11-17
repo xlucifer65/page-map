@@ -95,6 +95,15 @@ async function settleIfBlocked(tabId, blocklist, ms = 5000) {
   return chrome.tabs.get(tabId);
 }
 
+// Names the host a navigation ended on when it was redirected there (host only: paths can hold tokens).
+function redirectError(tab, requestedUrl, blocklist, generic) {
+  let host = '', asked = '';
+  try { host = new URL(tab.url || tab.pendingUrl || '').hostname; asked = new URL(requestedUrl).hostname; } catch (_) { return generic; }
+  if (!host || host === asked) return generic;
+  const signIn = /(^|\.)(login|accounts|signin|auth|sso)\./i.test(host);
+  return `tab ${tab.id} redirected to ${host} (blocked${signIn ? ': sign-in page' : ''}); ${signIn ? 'sign in manually and retry' : 'nothing was read'}`;
+}
+
 async function frameIds(tabId) {
   try {
     const results = await chrome.scripting.executeScript({
@@ -349,9 +358,13 @@ async function run(cmd, args) {
     const bl = await getBlocklist();
     if (args.quiet) { // vision mode: don't hand out structure
       const t = await settleIfBlocked(tab.id, bl);
-      return C.isBlocked(t.url || '', await getBlocklist()) ? { ok: false, error: 'blocked site' } : { ok: true, tabId: tab.id, text: `tab ${tab.id} loaded ${t.url}` };
+      return C.isBlocked(t.url || '', bl) ? { ok: false, error: redirectError(t, args.url, bl, 'blocked site') } : { ok: true, tabId: tab.id, text: `tab ${tab.id} loaded ${t.url}` };
     }
-    const res = await toContent(await settleIfBlocked(tab.id, bl), 'outline', {});
+    const final = await settleIfBlocked(tab.id, bl);
+    if (C.isBlocked(final.url || '', bl) || C.isBlocked(final.pendingUrl || '', bl)) {
+      return { ok: false, error: redirectError(final, args.url, bl, `tab ${tab.id} is on the page-map blocklist; nothing was read`) };
+    }
+    const res = await toContent(final, 'outline', {});
     return res.ok ? { ok: true, tabId: tab.id, text: `tab ${tab.id}\n${res.text}` } : res;
   }
 

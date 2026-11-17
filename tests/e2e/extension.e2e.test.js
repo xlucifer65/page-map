@@ -217,7 +217,7 @@ describe('F4 end-to-end', () => {
     await sw.evaluate(() => chrome.storage.local.set({ blocklist: ['localhost'] }));
     const r = await call('navigate', { url: `${base}/redirect` }); // 127.0.0.1 → localhost
     expect(r.isError).toBe(true);
-    expect(textOf(r)).toMatch(/blocklist/);
+    expect(textOf(r)).toMatch(/redirected to localhost \(blocked\)/);
     expect(textOf(r)).not.toContain('Second page');
     const tabs = textOf(await call('list_tabs'));
     expect(tabs).toMatch(/\[blocked\] localhost/);
@@ -240,7 +240,7 @@ describe('F4 end-to-end', () => {
     await sw.evaluate(() => chrome.storage.local.set({ blocklist: ['localhost'] }));
     const r = await call('navigate', { url: `${base}/sso-stuck` });
     expect(r.isError).toBe(true);
-    expect(textOf(r)).toMatch(/blocklist/);
+    expect(textOf(r)).toMatch(/redirected to localhost \(blocked\)/);
     expect(textOf(r)).not.toContain('Second page');
     await sw.evaluate(() => chrome.storage.local.remove('blocklist'));
     await call('navigate', { url: `${base}/shop.html` });
