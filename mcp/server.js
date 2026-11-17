@@ -170,7 +170,7 @@ function createServer() {
     text: z.string().optional(), option: z.string().optional(), checked: z.boolean().optional(), submit: z.boolean().optional(),
   });
   s.registerTool('batch', {
-    description: 'Several steps in one call (ref or label); stops at first failure.',
+    description: 'Steps in one call (ref or label); stops at 1st failure; one frame per call.',
     inputSchema: z.object({ steps: z.array(step), tab }),
   }, async (a) => call('batch', 'batch', a));
 

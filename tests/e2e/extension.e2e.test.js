@@ -343,6 +343,20 @@ describe('F4 end-to-end', () => {
     expect(textOf(await call('read_text'))).toContain('opened Deep file');
   });
 
+  it('iframe labels: click/batch/fill_form reach elements that only exist in a frame', async () => {
+    await call('navigate', { url: `${base}/frames.html` });
+    const res = textOf(await call('click', { label: 'Course 1' }));
+    expect(res).toMatch(/f\d+:[a-z]{4}\d+ button "Open Course 1"/);
+    const b = await call('batch', { steps: [{ action: 'click', label: 'Open Course 1' }] });
+    expect(b.isError).toBeFalsy();
+    expect(textOf(await call('read_text'))).toContain('opened Course 1');
+    const f = await call('fill_form', { fields: { 'Your name': 'Ada' } });
+    expect(f.isError).toBeFalsy();
+    expect(textOf(await call('read_text', { query: 'Ada' }))).toMatch(/Ada/);
+    const mixed = await call('batch', { steps: [{ action: 'click', ref: 'f1:abcd1' }, { action: 'click', ref: 'abcd2' }] });
+    expect(textOf(mixed)).toMatch(/different frames/);
+  });
+
   it('parallel: two agent sessions drive two tabs at the same time without mixing them up', async () => {
     const second = new Client({ name: 'e2e-2', version: '1.0.0' });
     await second.connect(new StdioClientTransport({

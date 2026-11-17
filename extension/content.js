@@ -237,6 +237,10 @@
         baseline = now;
         return { ok: true, text: C.formatDiff(d) };
       }
+      case 'probe': {
+        const t = target(args);
+        return t.error ? { ok: false, error: t.error } : { ok: true, text: '' };
+      }
       case 'click': case 'type': case 'select_option': case 'scroll': case 'check': {
         // label instead of ref: saves the agent a find() call ("type into 'Search Wikipedia'").
         if (args.ref == null && args.label != null) {

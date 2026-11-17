@@ -102,7 +102,7 @@ function namespaceRefs(text, frameId) {
   return String(text || '').replace(/\b[a-z]{4}\d+\b/g, (ref) => `f${frameId}:${ref}`);
 }
 
-async function toContentFrame(tab, frameId, cmd, args) {
+async function toContentFrame(tab, frameId, cmd, args, forceNs = false) {
   const blocklist = await getBlocklist();
   const current = await chrome.tabs.get(tab.id); // re-read: the tab may have navigated/redirected
   if (C.isBlocked(current.url || current.pendingUrl || '', blocklist) || C.isBlocked(current.pendingUrl || '', blocklist)) {
@@ -116,7 +116,7 @@ async function toContentFrame(tab, frameId, cmd, args) {
   }
   const msg = { __pagemap: true, cmd, args: targetArgs, blocklist };
   const namespaceActionResult = (result) => (
-    framed && result && result.ok && typeof result.text === 'string'
+    (framed || forceNs) && result && result.ok && typeof result.text === 'string'
       ? { ...result, text: namespaceRefs(result.text, frameId) }
       : result
   );
@@ -149,9 +149,53 @@ async function afterFrameNavigation(tab, frameId, blocklist) {
   return { ok: true, text: `frame ${frameId} navigated\n${o.ok ? namespaceRefs(o.text, frameId) : o.error}` };
 }
 
+// Frame that holds the element named by `args` (label/role): frame 0 wins, else the first sub-frame that matches.
+async function frameForLabel(tab, args) {
+  const ids = await frameIds(tab.id);
+  for (const frameId of ids) {
+    if (ids.length === 1) return frameId;
+    try {
+      const r = await toContentFrame(tab, frameId, 'probe', { label: args.label, role: args.role });
+      if (r && r.ok) return frameId;
+    } catch (_) { /* frame unavailable: try the next one */ }
+  }
+  return 0;
+}
+
+const LABELED = new Set(['click', 'type', 'select_option', 'check']);
+
+// batch / fill_form run inside ONE frame: the one named by the steps' refs, else the first frame holding the first labelled target.
+async function toBatchFrame(tab, cmd, args) {
+  const items = cmd === 'batch' ? args.steps : Object.keys(args.fields || {}).map((label) => ({ label }));
+  if (!Array.isArray(items)) return toContentFrame(tab, 0, cmd, args);
+  const refFrames = new Set();
+  let prefixed = false;
+  const steps = items.map((st) => {
+    if (!st || st.ref == null) return st;
+    const fr = splitFrameRef(st.ref);
+    refFrames.add(fr ? fr.frameId : 0);
+    if (!fr) return st;
+    prefixed = true;
+    return { ...st, ref: fr.ref };
+  });
+  if (refFrames.size > 1) return { ok: false, error: 'steps target different frames; use one batch per frame' };
+  let fid = refFrames.size ? [...refFrames][0] : 0;
+  if (!refFrames.size) {
+    const first = items.find((st) => st && st.label != null);
+    if (first) fid = await frameForLabel(tab, first);
+  }
+  const out = cmd === 'batch' ? { ...args, steps } : args;
+  return toContentFrame(tab, fid, cmd, out, prefixed || fid !== 0);
+}
+
 async function toContent(tab, cmd, args) {
   const framed = splitFrameRef(args.ref);
   if (framed) return toContentFrame(tab, framed.frameId, cmd, args);
+  if (LABELED.has(cmd) && args.ref == null && args.label != null) {
+    const frameId = await frameForLabel(tab, args);
+    return toContentFrame(tab, frameId, cmd, args, frameId !== 0);
+  }
+  if (cmd === 'batch' || cmd === 'fill_form') return toBatchFrame(tab, cmd, args);
 
   const aggregate = new Set(['outline', 'read_page', 'find', 'read_text']);
   if (!aggregate.has(cmd)) return toContentFrame(tab, 0, cmd, args);
