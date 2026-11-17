@@ -37,6 +37,18 @@ beforeAll(async () => {
       res.writeHead(302, { location: `http://localhost:${server.address().port}/page2.html` });
       return res.end();
     }
+    if (req.url.startsWith('/sso-bounce')) { // allowed → blocked host → (after a pause) back to an allowed page
+      res.writeHead(302, { location: `http://localhost:${server.address().port}/sso-hop` });
+      return res.end();
+    }
+    if (req.url.startsWith('/sso-hop')) {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(`<title>Sign in</title><p>secret sign-in form</p><script>setTimeout(() => location.href = 'http://127.0.0.1:${server.address().port}/page2.html', 800)</script>`);
+    }
+    if (req.url.startsWith('/sso-stuck')) {
+      res.writeHead(302, { location: `http://localhost:${server.address().port}/page2.html` });
+      return res.end();
+    }
     const name = path.basename(req.url.split('?')[0]) || 'shop.html';
     const f = path.join(root, 'tests/fixtures', name);
     if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); }
@@ -210,6 +222,26 @@ describe('F4 end-to-end', () => {
     const tabs = textOf(await call('list_tabs'));
     expect(tabs).toMatch(/\[blocked\] localhost/);
     expect(tabs).not.toContain('Second Page"'); // no title of blocked tab
+    await sw.evaluate(() => chrome.storage.local.remove('blocklist'));
+    await call('navigate', { url: `${base}/shop.html` });
+  });
+
+  it('a transient redirect through a blocked host settles and returns the final page', async () => {
+    await sw.evaluate(() => chrome.storage.local.set({ blocklist: ['localhost'] }));
+    const r = await call('navigate', { url: `${base}/sso-bounce` });
+    expect(r.isError).toBeFalsy();
+    expect(textOf(r)).toContain('Second page');
+    expect(textOf(r)).not.toContain('secret sign-in form');
+    await sw.evaluate(() => chrome.storage.local.remove('blocklist'));
+    await call('navigate', { url: `${base}/shop.html` });
+  });
+
+  it('a redirect that stays on the blocked host still errors with no page content', async () => {
+    await sw.evaluate(() => chrome.storage.local.set({ blocklist: ['localhost'] }));
+    const r = await call('navigate', { url: `${base}/sso-stuck` });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toMatch(/blocklist/);
+    expect(textOf(r)).not.toContain('Second page');
     await sw.evaluate(() => chrome.storage.local.remove('blocklist'));
     await call('navigate', { url: `${base}/shop.html` });
   });

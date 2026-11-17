@@ -81,6 +81,20 @@ function waitForLoad(tabId, timeout = 15000) {
   });
 }
 
+// A tab bounced through a blocked host (SSO sign-in) is usually mid-redirect: poll until it settles,
+// reading nothing meanwhile, and let the caller re-check the final URL.
+async function settleIfBlocked(tabId, blocklist, ms = 5000) {
+  const blockedNow = (t) => C.isBlocked(t.url || '', blocklist) || C.isBlocked(t.pendingUrl || '', blocklist);
+  let t = await chrome.tabs.get(tabId);
+  const end = Date.now() + ms;
+  while (blockedNow(t) && Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 150));
+    try { t = await chrome.tabs.get(tabId); } catch (_) { break; }
+    if (!blockedNow(t) && t.status !== 'complete') await waitForLoad(tabId);
+  }
+  return chrome.tabs.get(tabId);
+}
+
 async function frameIds(tabId) {
   try {
     const results = await chrome.scripting.executeScript({
@@ -236,8 +250,8 @@ async function toContent(tab, cmd, args) {
 async function afterNavigation(tabId, blocklist, afterAction = false) {
   await new Promise((r) => setTimeout(r, 100));
   await waitForLoad(tabId);
-  const t = await chrome.tabs.get(tabId);
-  if (C.isBlocked(t.url || '', blocklist)) return { ok: true, text: 'page navigated → [blocked site]' };
+  const t = await settleIfBlocked(tabId, blocklist);
+  if (C.isBlocked(t.url || '', blocklist) || C.isBlocked(t.pendingUrl || '', blocklist)) return { ok: true, text: 'page navigated → [blocked site]' };
   const o = await toContent(t, 'outline', afterAction ? { auto_dismiss: false } : {});
   return { ok: true, text: `page navigated → ${t.url}\n${o.ok ? o.text : o.error}` };
 }
@@ -332,11 +346,12 @@ async function run(cmd, args) {
     else { tab = await resolveTab(args.tab); await chrome.tabs.update(tab.id, { url: args.url }); }
     await new Promise((r) => setTimeout(r, 100));
     await waitForLoad(tab.id);
+    const bl = await getBlocklist();
     if (args.quiet) { // vision mode: don't hand out structure
-      const t = await chrome.tabs.get(tab.id);
+      const t = await settleIfBlocked(tab.id, bl);
       return C.isBlocked(t.url || '', await getBlocklist()) ? { ok: false, error: 'blocked site' } : { ok: true, tabId: tab.id, text: `tab ${tab.id} loaded ${t.url}` };
     }
-    const res = await toContent(await chrome.tabs.get(tab.id), 'outline', {});
+    const res = await toContent(await settleIfBlocked(tab.id, bl), 'outline', {});
     return res.ok ? { ok: true, tabId: tab.id, text: `tab ${tab.id}\n${res.text}` } : res;
   }
 
