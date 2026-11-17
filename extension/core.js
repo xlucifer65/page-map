@@ -493,6 +493,14 @@
     return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
   }
 
+  // Same-name candidates (a row's checkbox, rowheader and button) → the primary actionable one first.
+  const RANK_GROUPS = [['link'], ['button'], ['menuitem', 'tab', 'option', 'treeitem'], ['textbox', 'combobox', 'searchbox', 'password'],
+    null, ['rowheader', 'gridcell', 'cell'], ['checkbox', 'radio', 'switch']];
+  function roleRank(role) {
+    const i = RANK_GROUPS.findIndex((g) => g && g.includes(role));
+    return i < 0 ? 4 : i;
+  }
+
   function find(win, doc, refs, query, opts = {}) {
     const limit = opts.limit || 8;
     const q = clean(query, 200).toLowerCase();
@@ -516,7 +524,7 @@
       }
       if (s > 0 && s >= (opts.minScore || 0)) scored.push([s, it]);
     }
-    scored.sort((a, b) => b[0] - a[0]);
+    scored.sort((a, b) => b[0] - a[0] || (opts.rank ? roleRank(a[1].role) - roleRank(b[1].role) : 0));
     const top = scored.slice(0, limit).map(x => x[1]);
     return { items: top, matches: scored.length, capped: snap.capped, note: snap.capped ? capNote(snap.maxVisit) : '' };
   }
@@ -696,9 +704,22 @@
   const CONTROL_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'slider', 'password', 'spinbutton']);
   function resolveField(win, doc, refs, label) {
     // minScore: the label must really match (a role word like "button" alone is not enough).
-    const r = find(win, doc, refs, label, { limit: 20, minScore: 20 });
+    const r = find(win, doc, refs, label, { limit: 20, minScore: 20, rank: true });
     const hit = r.items.find((it) => CONTROL_ROLES.has(it.role));
     return hit ? { ref: hit.ref, role: hit.role, el: refs.resolve(hit.ref) } : null;
+  }
+
+  // Target of a human label for `action`. An explicit role wins; clicks prefer the primary actionable
+  // element, other actions prefer form controls.
+  function resolveLabel(win, doc, refs, label, opts = {}) {
+    const pick = (o) => find(win, doc, refs, label, { limit: 1, minScore: 30, rank: true, ...o }).items[0];
+    let hit = opts.role ? pick({ role: opts.role }) : null;
+    if (!hit && opts.action !== 'click') {
+      const f = resolveField(win, doc, refs, label);
+      if (f) return { ref: f.ref, role: f.role };
+    }
+    hit = hit || pick({});
+    return hit ? { ref: hit.ref, role: hit.role } : null;
   }
 
   // Cookie banners / consent walls / newsletter popups and the button that closes them.
@@ -748,7 +769,7 @@
 
   root.PageMapCore = {
     nextBackoff,
-    findOption, resolveField, findInterruption, overlayBoxes,
+    findOption, resolveField, resolveLabel, findInterruption, overlayBoxes,
     createRefs, snapshot, format, formatItem, outline, readText, grepText, find, diff, formatDiff, lineMap,
     isBlocked, isSecret, looksLikeCard, maskCards, roleOf, nameOf, act, DEFAULT_BLOCKLIST,
   };

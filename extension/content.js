@@ -96,19 +96,11 @@
   }
 
   // A step can name its target by ref or by human label ("Email", "Country").
-  const FIELD_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'password']);
   function target(step) {
     if (step.ref != null) return { ref: String(step.ref) };
     if (step.label == null) return { error: 'step needs ref or label' };
-    // A known non-field role (button, link…) narrows the search: "Search" the button vs the box.
-    if (step.role && !FIELD_ROLES.has(step.role)) {
-      const hit = C.find(window, document, refs, step.label, { role: step.role, limit: 1, minScore: 30 }).items[0];
-      if (hit) return { ref: hit.ref, role: hit.role };
-    }
-    const f = C.resolveField(window, document, refs, step.label);
-    if (f) return { ref: f.ref, role: f.role };
-    const any = C.find(window, document, refs, step.label, { limit: 1, minScore: 30 }).items[0];
-    return any ? { ref: any.ref, role: any.role } : { error: `nothing labelled "${step.label}"` };
+    const hit = C.resolveLabel(window, document, refs, step.label, { role: step.role, action: step.action });
+    return hit || { error: `nothing labelled "${step.label}"` };
   }
 
   async function runSteps(steps) {
@@ -133,7 +125,7 @@
   function formSteps(fields, submit) {
     const steps = [];
     for (const [label, value] of Object.entries(fields || {})) {
-      const t = target({ label });
+      const t = target({ label, action: 'fill' });
       if (t.error) { steps.push({ action: 'type', label }); continue; } // will report the miss
       if (['checkbox', 'radio', 'switch'].includes(t.role)) steps.push({ action: 'check', ref: t.ref, label, checked: value !== false && value !== 'false' && value !== 'no' });
       else if (['combobox', 'listbox'].includes(t.role)) steps.push({ action: 'select', ref: t.ref, label, option: String(value) });
@@ -244,7 +236,7 @@
       case 'click': case 'type': case 'select_option': case 'scroll': case 'check': {
         // label instead of ref: saves the agent a find() call ("type into 'Search Wikipedia'").
         if (args.ref == null && args.label != null) {
-          const t = target(args);
+          const t = target({ ...args, action: cmd });
           if (t.error) return { ok: false, error: t.error };
           args = { ...args, ref: t.ref };
         }

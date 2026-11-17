@@ -410,6 +410,13 @@ describe('generic skills', () => {
     expect(p.C.resolveField(p.win, p.doc, p.refs, 'Email').role).toBe('textbox');
     expect(p.C.resolveField(p.win, p.doc, p.refs, 'accept the terms').role).toBe('checkbox');
   });
+  it('resolveLabel ranks same-name matches: button over rowheader/checkbox, role overrides', () => {
+    const p = page(`<div role="row"><input type="checkbox" aria-label="Course 1"><div role="rowheader" tabindex="0">Course 1</div><button>Course 1</button></div>`);
+    const pick = (o) => p.C.resolveLabel(p.win, p.doc, p.refs, 'Course 1', o).role;
+    expect(pick({ action: 'click' })).toBe('button');
+    expect(pick({ action: 'click', role: 'checkbox' })).toBe('checkbox');
+    expect(pick({ action: 'click', role: 'rowheader' })).toBe('rowheader');
+  });
   it('check sets a checkbox only when needed', () => {
     const p = page(`<input type="checkbox" aria-label="t">`);
     const ref = snap(p).items[0].ref;
