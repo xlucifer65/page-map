@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>SharePoint Files</title></head>
+<body>
+  <main>
+    <h1>Shared files</h1>
+    <button id="course">Course 1</button>
+    <p id="status"></p>
+    <script>
+      document.getElementById('course').addEventListener('click', () => {
+        document.getElementById('status').textContent = 'opened Course 1';
+      });
+    </script>
+  </main>
+</body>
+</html>

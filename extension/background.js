@@ -81,25 +81,48 @@ function waitForLoad(tabId, timeout = 15000) {
   });
 }
 
-async function inject(tabId) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['core.js', 'content.js'] });
+async function frameIds(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => true,
+    });
+    return [...new Set(results.map((r) => r.frameId).filter((id) => Number.isInteger(id)))].sort((a, b) => a - b);
+  } catch (_) {
+    return [0];
+  }
 }
 
-async function toContent(tab, cmd, args) {
+function splitFrameRef(ref) {
+  const m = String(ref || '').match(/^f(\d+):(.+)$/);
+  return m ? { frameId: Number(m[1]), ref: m[2] } : null;
+}
+
+function namespaceRefs(text, frameId) {
+  return String(text || '').replace(/\b[a-z]{4}\d+\b/g, (ref) => `f${frameId}:${ref}`);
+}
+
+async function toContentFrame(tab, frameId, cmd, args) {
   const blocklist = await getBlocklist();
   const current = await chrome.tabs.get(tab.id); // re-read: the tab may have navigated/redirected
   if (C.isBlocked(current.url || current.pendingUrl || '', blocklist) || C.isBlocked(current.pendingUrl || '', blocklist)) {
     return { ok: false, error: `tab ${tab.id} is on the page-map blocklist; nothing was read` };
   }
-  const msg = { __pagemap: true, cmd, args, blocklist };
+  const targetArgs = { ...args };
+  const framed = splitFrameRef(targetArgs.ref);
+  if (framed) {
+    if (framed.frameId !== frameId) return { ok: false, error: `ref ${targetArgs.ref} belongs to frame ${framed.frameId}` };
+    targetArgs.ref = framed.ref;
+  }
+  const msg = { __pagemap: true, cmd, args: targetArgs, blocklist };
   try {
-    return await chrome.tabs.sendMessage(tab.id, msg);
+    return await chrome.tabs.sendMessage(tab.id, msg, { frameId });
   } catch (e) {
     const m = String(e && e.message);
     if (/Receiving end does not exist|Could not establish connection/i.test(m)) {
       // Tab was open before the extension loaded (or a fresh navigation): inject and retry.
-      await inject(tab.id);
-      return await chrome.tabs.sendMessage(tab.id, msg);
+      await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, files: ['core.js', 'content.js'] });
+      return await chrome.tabs.sendMessage(tab.id, msg, { frameId });
     }
     if (/message (port|channel) closed|back\/forward cache|page.*(unload|moved)/i.test(m)) {
       // The action navigated away. Report the new page instead.
@@ -107,6 +130,43 @@ async function toContent(tab, cmd, args) {
     }
     throw e;
   }
+}
+
+async function toContent(tab, cmd, args) {
+  const framed = splitFrameRef(args.ref);
+  if (framed) return toContentFrame(tab, framed.frameId, cmd, args);
+
+  const aggregate = new Set(['outline', 'read_page', 'find', 'read_text']);
+  if (!aggregate.has(cmd)) return toContentFrame(tab, 0, cmd, args);
+
+  const ids = await frameIds(tab.id);
+  if (ids.length === 1) return toContentFrame(tab, ids[0], cmd, args);
+  const results = await Promise.all(ids.map(async (frameId) => {
+    try {
+      const result = await toContentFrame(tab, frameId, cmd, args);
+      if (!result.ok) return { frameId, result };
+      return {
+        frameId,
+        result: {
+          ...result,
+          text: cmd === 'read_text' ? result.text : namespaceRefs(result.text, frameId),
+        },
+      };
+    } catch (e) {
+      return { frameId, result: { ok: false, error: String((e && e.message) || e) } };
+    }
+  }));
+  const good = results.filter(({ result }) => result.ok);
+  if (!good.length) return results[0]?.result || { ok: false, error: 'no frame responded' };
+  const text = good.map(({ frameId, result }) => {
+    const heading = frameId === 0 ? '' : `\n[iframe frame ${frameId}]\n`;
+    return heading + result.text;
+  }).join('\n');
+  const failed = results.filter(({ result }) => !result.ok);
+  return {
+    ok: true,
+    text: text + (failed.length ? `\n… ${failed.length} frame${failed.length === 1 ? '' : 's'} unavailable` : ''),
+  };
 }
 
 // The action loaded a new page: hand back the new page's outline right away (saves the agent a turn).
@@ -261,7 +321,7 @@ async function run(cmd, args) {
   }
 
   const allowed = new Set(['outline', 'read_text', 'read_page', 'find', 'changes', 'click', 'type', 'select_option', 'scroll',
-    'check', 'batch', 'fill_form', 'click_xy', 'type_text']);
+    'check', 'batch', 'fill_form', 'click_xy', 'type_text', 'key']);
   if (!allowed.has(cmd)) return { ok: false, error: `unknown command ${cmd}` };
   const urlBefore = tab.url;
   if (ACTIONS.has(cmd)) stepsByTab.set(tab.id, []);

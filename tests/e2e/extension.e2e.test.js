@@ -37,8 +37,13 @@ beforeAll(async () => {
       res.writeHead(302, { location: `http://localhost:${server.address().port}/page2.html` });
       return res.end();
     }
-    const f = path.join(root, 'tests/fixtures', path.basename(req.url.split('?')[0]) || 'shop.html');
+    const name = path.basename(req.url.split('?')[0]) || 'shop.html';
+    const f = path.join(root, 'tests/fixtures', name);
     if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); }
+    if (name === 'frames.html') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(fs.readFileSync(f, 'utf8').replaceAll('PORT', String(server.address().port)));
+    }
     res.writeHead(200, { 'content-type': 'text/html' });
     fs.createReadStream(f).pipe(res);
   });
@@ -305,6 +310,17 @@ describe('F4 end-to-end', () => {
     const outside = await call('upload_file', { label: 'Plain file', paths: [path.join(dir, 'outside.txt')] });
     expect(outside.isError).toBe(true);
     expect(textOf(outside)).toMatch(/outside upload folders/);
+  });
+
+  it('reads and acts on cross-origin iframe content with namespaced refs', async () => {
+    await call('navigate', { url: `${base}/frames.html` });
+    const outline = textOf(await call('outline'));
+    expect(outline).toContain('SharePoint Files');
+    const found = textOf(await call('find', { query: 'Course 1', role: 'button' }));
+    const ref = found.match(/(f\d+:[a-z]{4}\d+) button "Course 1"/)?.[1];
+    expect(ref).toMatch(/^f\d+:[a-z]{4}\d+$/);
+    await call('click', { ref });
+    expect(textOf(await call('read_text'))).toContain('opened Course 1');
   });
 
   it('parallel: two agent sessions drive two tabs at the same time without mixing them up', async () => {
