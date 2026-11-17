@@ -211,6 +211,12 @@ describe('D2 blocklist', () => {
     expect(C.isBlocked('https://github.com/', ['github.com'])).toBe(true);
     expect(C.isBlocked('not a url')).toBe(false);
   });
+  it('allows SharePoint but keeps the Microsoft sign-in page blocked', () => {
+    const { C } = page('');
+    expect(C.isBlocked('https://contoso.sharepoint.com/sites/x', C.DEFAULT_BLOCKLIST)).toBe(false);
+    expect(C.isBlocked('https://contoso.sharepoint.com/sites/x/Documents%20partages/Forms/AllItems.aspx?id=%2Fsites%2Fx%2Fa', C.DEFAULT_BLOCKLIST)).toBe(false);
+    expect(C.isBlocked('https://login.microsoftonline.com/common/oauth2/authorize', C.DEFAULT_BLOCKLIST)).toBe(true);
+  });
   it('normalizes trailing dots/case and plain patterns cover subdomains', () => {
     const { C } = page('');
     expect(C.isBlocked('https://MAIL.google.com./x')).toBe(true);

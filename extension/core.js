@@ -36,6 +36,7 @@
     // '!' entries are exceptions that win over the patterns above.
     '!worldbank.org', '!bankrate.com', '!databank.*',
     '!teams.microsoft.com', '!teams.cloud.microsoft', '!teams.live.com', // Teams: allowed (user choice)
+    '!sharepoint.com', // SharePoint / OneDrive for Business docs: allowed (user choice)
   ];
   // Patterns without '*' also cover subdomains: 'chase.com' blocks 'secure.chase.com'.
 
