@@ -319,7 +319,10 @@ describe('F4 end-to-end', () => {
     const found = textOf(await call('find', { query: 'Course 1', role: 'button' }));
     const ref = found.match(/(f\d+:[a-z]{4}\d+) button "Course 1"/)?.[1];
     expect(ref).toMatch(/^f\d+:[a-z]{4}\d+$/);
-    await call('click', { ref });
+    const clickResult = textOf(await call('click', { ref }));
+    const openRef = clickResult.match(/(f\d+:[a-z]{4}\d+) button "Open Course 1"/)?.[1];
+    expect(openRef).toMatch(/^f\d+:[a-z]{4}\d+$/);
+    await call('click', { ref: openRef });
     expect(textOf(await call('read_text'))).toContain('opened Course 1');
   });
 

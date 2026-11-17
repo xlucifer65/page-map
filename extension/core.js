@@ -128,7 +128,7 @@
   }
 
   function roleOf(el) {
-    const explicit = (el.getAttribute('role') || '').trim().split(/\s+/)[0];
+    const explicit = (el.getAttribute('role') || '').trim().split(/\s+/)[0].toLowerCase();
     if (explicit) return explicit;
     const tag = el.tagName.toLowerCase();
     switch (tag) {

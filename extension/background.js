@@ -115,14 +115,19 @@ async function toContentFrame(tab, frameId, cmd, args) {
     targetArgs.ref = framed.ref;
   }
   const msg = { __pagemap: true, cmd, args: targetArgs, blocklist };
+  const namespaceActionResult = (result) => (
+    framed && result && result.ok && typeof result.text === 'string'
+      ? { ...result, text: namespaceRefs(result.text, frameId) }
+      : result
+  );
   try {
-    return await chrome.tabs.sendMessage(tab.id, msg, { frameId });
+    return namespaceActionResult(await chrome.tabs.sendMessage(tab.id, msg, { frameId }));
   } catch (e) {
     const m = String(e && e.message);
     if (/Receiving end does not exist|Could not establish connection/i.test(m)) {
       // Tab was open before the extension loaded (or a fresh navigation): inject and retry.
       await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, files: ['core.js', 'content.js'] });
-      return await chrome.tabs.sendMessage(tab.id, msg, { frameId });
+      return namespaceActionResult(await chrome.tabs.sendMessage(tab.id, msg, { frameId }));
     }
     if (/message (port|channel) closed|back\/forward cache|page.*(unload|moved)/i.test(m)) {
       // The action navigated away. Report the new page instead.

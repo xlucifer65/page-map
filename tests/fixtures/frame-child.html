@@ -8,7 +8,16 @@
     <p id="status"></p>
     <script>
       document.getElementById('course').addEventListener('click', () => {
-        document.getElementById('status').textContent = 'opened Course 1';
+        document.getElementById('status').textContent = 'selected Course 1';
+        if (!document.getElementById('open-course')) {
+          const open = document.createElement('button');
+          open.id = 'open-course';
+          open.textContent = 'Open Course 1';
+          open.addEventListener('click', () => {
+            document.getElementById('status').textContent = 'opened Course 1';
+          });
+          document.querySelector('main').appendChild(open);
+        }
       });
     </script>
   </main>

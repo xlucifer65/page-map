@@ -528,3 +528,15 @@ describe('find typo tolerance', () => {
     expect(p.C.resolveField(p.win, p.doc, p.refs, 'zzzz')).toBeFalsy();
   });
 });
+
+describe('find role filters', () => {
+  it('matches tabs by role', () => {
+    const p = page('<div role="tab">Shared</div><button>Shared</button>');
+    expect(p.C.find(p.win, p.doc, p.refs, 'Shared', { role: 'tab' }).items.map((i) => i.role)).toEqual(['tab']);
+  });
+
+  it('normalizes explicit role casing', () => {
+    const p = page('<div role="TAB">Shared</div>');
+    expect(p.C.find(p.win, p.doc, p.refs, 'Shared', { role: 'tab' }).items[0].role).toBe('tab');
+  });
+});
