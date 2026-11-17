@@ -592,6 +592,39 @@
     el.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true, composed: true, ...init }));
   }
 
+  function pressEnter(win, el) {
+    const key = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true };
+    if (typeof el.focus === 'function') el.focus({ preventScroll: true });
+    el.dispatchEvent(new win.KeyboardEvent('keydown', key));
+    el.dispatchEvent(new win.KeyboardEvent('keypress', key));
+    el.dispatchEvent(new win.KeyboardEvent('keyup', key));
+  }
+
+  // List items (Fluent DetailsList…) often open only on Enter / double-click. A single click that did nothing
+  // but focus/select such an element may be retried; never for toggles, submit buttons or destructive names.
+  const DESTRUCTIVE = /delete|remove|send|pay|buy|submit|confirm/i;
+  function canRetryOpen(el, role, name) {
+    if (!['link', 'button', 'rowheader', 'gridcell'].includes(role)) return false;
+    if (DESTRUCTIVE.test(name || '')) return false;
+    if (el.tagName === 'A' && /^(?!#|javascript:)/i.test(el.getAttribute('href') || '#')) return false; // real navigation
+    if ((el.type === 'submit' && (el.form || el.tagName === 'INPUT')) || el.type === 'checkbox' || el.type === 'radio') return false;
+    return true;
+  }
+
+  // True when two snapshots differ only in focus/selection/checked flags (nothing added, removed or renamed).
+  function onlySoftChanges(prev, next) {
+    if (prev.size !== next.size) return false;
+    const strip = (line) => line.replace(/ \[([^\]]*)\]$/, (_, f) => {
+      const keep = f.split(',').filter((x) => !['focused', 'checked', 'selected', 'current'].includes(x));
+      return keep.length ? ` [${keep.join(',')}]` : '';
+    });
+    for (const [ref, line] of next) {
+      if (!prev.has(ref)) return false;
+      if (prev.get(ref) !== line && strip(prev.get(ref)) !== strip(line)) return false;
+    }
+    return true;
+  }
+
   function act(win, doc, refs, action, args = {}) {
     if (action === 'scroll' && args.ref == null) {
       const dir = args.direction === 'up' ? -1 : 1;
@@ -608,13 +641,17 @@
         if (el.disabled) return { ok: false, error: `ref ${args.ref} is disabled` };
         const opts = { bubbles: true, cancelable: true, composed: true, button: 0, view: win };
         // Many menus open on pointerdown/mousedown, not click.
-        if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerdown', opts));
-        el.dispatchEvent(new win.MouseEvent('mousedown', opts));
-        if (typeof el.focus === 'function') el.focus({ preventScroll: true });
-        if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerup', opts));
-        el.dispatchEvent(new win.MouseEvent('mouseup', opts));
-        el.click();
-        return { ok: true, info: `clicked ${args.ref}` };
+        for (let n = 1; n <= (args.double ? 2 : 1); n++) {
+          const o = { ...opts, detail: n };
+          if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerdown', o));
+          el.dispatchEvent(new win.MouseEvent('mousedown', o));
+          if (typeof el.focus === 'function') el.focus({ preventScroll: true });
+          if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerup', o));
+          el.dispatchEvent(new win.MouseEvent('mouseup', o));
+          el.click();
+          if (n === 2) el.dispatchEvent(new win.MouseEvent('dblclick', o));
+        }
+        return { ok: true, info: `${args.double ? 'double-clicked' : 'clicked'} ${args.ref}` };
       }
       case 'type': {
         if (isSecret(el) && !args.allow_secret) return { ok: false, error: `ref ${args.ref} is a secret field; refusing to type without allow_secret=true` };
@@ -771,6 +808,6 @@
     nextBackoff,
     findOption, resolveField, resolveLabel, findInterruption, overlayBoxes,
     createRefs, snapshot, format, formatItem, outline, readText, grepText, find, diff, formatDiff, lineMap,
-    isBlocked, isSecret, looksLikeCard, maskCards, roleOf, nameOf, act, DEFAULT_BLOCKLIST,
+    canRetryOpen, onlySoftChanges, pressEnter, isBlocked, isSecret, looksLikeCard, maskCards, roleOf, nameOf, act, DEFAULT_BLOCKLIST,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

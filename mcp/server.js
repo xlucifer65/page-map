@@ -147,30 +147,30 @@ function createServer() {
   }, async (a) => call('read_text', 'read_text', a));
 
   s.registerTool('find', {
-    description: 'Find elements by label; returns refs. role filters (button, link, textbox…).',
+    description: 'Find elements by label → refs. role filters (button, link…).',
     inputSchema: z.object({ query: z.string(), role: z.string().optional(), limit: z.number().optional(), tab }),
   }, async (a) => call('find', 'find', a));
 
   s.registerTool('read_page', {
-    description: 'Interactive elements on screen: ref role "name" =value [flags].',
+    description: 'Elements on screen: ref role "name" =value [flags].',
     inputSchema: z.object({ viewport_only: z.boolean().optional(), max_items: z.number().optional(), role: z.string().optional(), tab }),
   }, async (a) => call('read_page', 'read_page', a));
 
-  s.registerTool('click', { description: 'Click by ref or label; returns page changes.', inputSchema: z.object({ ref: ref.optional(), label: z.string().optional(), tab }) },
+  s.registerTool('click', { description: 'Click by ref or label (double=true: double-click); returns changes.', inputSchema: z.object({ ref: ref.optional(), label: z.string().optional(), role: z.string().optional(), double: z.boolean().optional(), tab }) },
     async (a) => call('click', 'click', a));
 
   s.registerTool('type', {
-    description: 'Type into a field by ref or label. submit=true submits; clear=false appends.',
+    description: 'Type into a field (ref/label). submit=true submits; clear=false appends.',
     inputSchema: z.object({ ref: ref.optional(), label: z.string().optional(), text: z.string(), submit: z.boolean().optional(), clear: z.boolean().optional(), allow_secret: z.boolean().optional(), tab }),
   }, async (a) => call('type', 'type', a));
 
   const step = z.object({
     action: z.enum(['click', 'type', 'select', 'check', 'scroll']),
-    ref: refSchema.optional(), label: z.string().optional(),
+    ref: refSchema.optional(), label: z.string().optional(), role: z.string().optional(), double: z.boolean().optional(),
     text: z.string().optional(), option: z.string().optional(), checked: z.boolean().optional(), submit: z.boolean().optional(),
   });
   s.registerTool('batch', {
-    description: 'Steps in one call (ref or label); stops at 1st failure; one frame per call.',
+    description: 'Steps in one call (ref or label); stops at 1st failure; one frame.',
     inputSchema: z.object({ steps: z.array(step), tab }),
   }, async (a) => call('batch', 'batch', a));
 
@@ -180,7 +180,7 @@ function createServer() {
   }, async (a) => call('fill_form', 'fill_form', a));
 
   s.registerTool('upload_file', {
-    description: 'Attach local files to a file input, upload button or drop zone (ref or label).',
+    description: 'Attach local files to an upload control (ref or label).',
     inputSchema: z.object({ paths: z.array(z.string()), ref: ref.optional(), label: z.string().optional(), tab }),
   }, async (a) => {
     // Policy first: only files in allowed folders, never hidden/secret files (prompt-injection exfiltration guard).
@@ -211,19 +211,19 @@ function createServer() {
     return call('upload_file', 'upload_commit', { id, ref: a.ref, label: a.label, tab: a.tab });
   });
 
-  s.registerTool('select_option', { description: 'Pick a dropdown option (by ref or label).', inputSchema: z.object({ ref: ref.optional(), label: z.string().optional(), option: z.string(), tab }) },
+  s.registerTool('select_option', { description: 'Pick a dropdown option.', inputSchema: z.object({ ref: ref.optional(), label: z.string().optional(), option: z.string(), tab }) },
     async (a) => call('select_option', 'select_option', a));
 
 
-  s.registerTool('navigate', { description: 'Open URL (new_tab optional); returns outline.', inputSchema: z.object({ url: z.string(), new_tab: z.boolean().optional(), tab }) },
+  s.registerTool('navigate', { description: 'Open URL; returns outline.', inputSchema: z.object({ url: z.string(), new_tab: z.boolean().optional(), tab }) },
     async (a) => call('navigate', 'navigate', a));
 
 
-  s.registerTool('screenshot', { description: 'Image of the tab. Costly: only when text is not enough.', inputSchema: z.object({ tab }) },
+  s.registerTool('screenshot', { description: 'Image of the tab; costly, last resort.', inputSchema: z.object({ tab }) },
     async (a) => call('screenshot', 'screenshot', a));
 
   s.registerTool('save_recipe', {
-    description: 'Save the steps since the last navigate as a named recipe.',
+    description: 'Save steps since last navigate as a named recipe.',
     inputSchema: z.object({ name: z.string(), description: z.string().optional() }),
   }, async (a) => {
     try {
@@ -233,7 +233,7 @@ function createServer() {
   });
 
   s.registerTool('run_recipe', {
-    description: 'Replay a saved recipe; values override typed fields by label.',
+    description: 'Replay a recipe; values override typed fields.',
     inputSchema: z.object({ name: z.string(), values: z.record(z.string(), z.string()).optional(), tab }),
   }, async (a) => {
     const t0 = Date.now();

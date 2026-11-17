@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>SharePoint List</title></head>
+<body>
+  <main>
+    <h1>Documents</h1>
+    <div role="row" id="row" tabindex="-1">
+      <input type="checkbox" id="chk" aria-label="Course 1">
+      <div role="rowheader" id="hdr">Course 1</div>
+      <button id="name">Course 1</button>
+    </div>
+    <button id="del">Delete</button>
+    <p id="status"></p>
+    <script>
+      // Like Fluent DetailsList: a single click only selects the row; Enter or dblclick on the name opens it.
+      const $ = (id) => document.getElementById(id);
+      const select = () => { $('chk').checked = true; $('status').textContent = '1 selected'; };
+      const open = () => {
+        $('status').textContent = 'opened Course 1';
+        $('row').innerHTML = '<button>Lesson A</button><button>Lesson B</button>';
+      };
+      for (const id of ['name', 'hdr']) {
+        $(id).addEventListener('click', select);
+        $(id).addEventListener('dblclick', open);
+        $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+      }
+      $('del').addEventListener('dblclick', () => { $('status').textContent = 'delete retried'; });
+      $('del').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('status').textContent = 'delete retried'; });
+    </script>
+  </main>
+</body>
+</html>

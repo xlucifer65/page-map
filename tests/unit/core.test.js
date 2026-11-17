@@ -417,6 +417,23 @@ describe('generic skills', () => {
     expect(pick({ action: 'click', role: 'checkbox' })).toBe('checkbox');
     expect(pick({ action: 'click', role: 'rowheader' })).toBe('rowheader');
   });
+  it('click double dispatches two click rounds then dblclick; open-retry guards', () => {
+    const p = page(`<button id="b">Open</button><button id="d">Delete file</button><input type="checkbox" id="c" aria-label="x">`);
+    const seen = [];
+    const b = p.doc.getElementById('b');
+    for (const t of ['mousedown', 'click', 'dblclick']) b.addEventListener(t, () => seen.push(t));
+    const ref = snap(p).items.find((i) => i.name === 'Open').ref;
+    p.C.act(p.win, p.doc, p.refs, 'click', { ref, double: true });
+    expect(seen).toEqual(['mousedown', 'click', 'mousedown', 'click', 'dblclick']);
+    expect(p.C.canRetryOpen(b, 'button', 'Open')).toBe(true);
+    expect(p.C.canRetryOpen(p.doc.getElementById('d'), 'button', 'Delete file')).toBe(false);
+    expect(p.C.canRetryOpen(p.doc.getElementById('c'), 'checkbox', 'x')).toBe(false);
+    const m = (l) => new Map([['r1', l]]);
+    expect(p.C.onlySoftChanges(m('r1 button "A"'), m('r1 button "A" [focused]'))).toBe(true);
+    expect(p.C.onlySoftChanges(m('r1 checkbox "A"'), m('r1 checkbox "A" [checked,focused]'))).toBe(true);
+    expect(p.C.onlySoftChanges(m('r1 button "A"'), m('r1 button "B"'))).toBe(false);
+    expect(p.C.onlySoftChanges(m('r1 button "A"'), new Map([['r1', 'r1 button "A"'], ['r2', 'x']]))).toBe(false);
+  });
   it('check sets a checkbox only when needed', () => {
     const p = page(`<input type="checkbox" aria-label="t">`);
     const ref = snap(p).items[0].ref;

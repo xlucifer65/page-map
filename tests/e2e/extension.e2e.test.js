@@ -54,7 +54,8 @@ beforeAll(async () => {
     if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); }
     if (name === 'frames.html') {
       res.writeHead(200, { 'content-type': 'text/html' });
-      return res.end(fs.readFileSync(f, 'utf8').replaceAll('PORT', String(server.address().port)));
+      const child = new URL(req.url, 'http://x').searchParams.get('child') || 'frame-child.html';
+      return res.end(fs.readFileSync(f, 'utf8').replaceAll('PORT', String(server.address().port)).replaceAll('CHILD', child));
     }
     res.writeHead(200, { 'content-type': 'text/html' });
     fs.createReadStream(f).pipe(res);
@@ -387,6 +388,31 @@ describe('F4 end-to-end', () => {
     expect(textOf(await call('read_text', { query: 'Ada' }))).toMatch(/Ada/);
     const mixed = await call('batch', { steps: [{ action: 'click', ref: 'f1:abcd1' }, { action: 'click', ref: 'abcd2' }] });
     expect(textOf(mixed)).toMatch(/different frames/);
+  });
+
+  it('DetailsList-style lists: label click opens via Enter, double:true opens directly, Delete is never retried', async () => {
+    const url = `${base}/frames.html?child=frame-list.html`;
+    await call('navigate', { url });
+    const res = textOf(await call('click', { label: 'Course 1' }));
+    expect(res).toMatch(/opened via (Enter|double-click)/);
+    expect(res).toMatch(/f\d+:[a-z]{4}\d+ button "Lesson A"/);
+    expect(textOf(await call('read_text'))).toContain('opened Course 1');
+
+    await call('navigate', { url });
+    const found = textOf(await call('find', { query: 'Course 1', role: 'button' }));
+    const ref = found.match(/(f\d+:[a-z]{4}\d+) button "Course 1"/)?.[1];
+    expect(ref).toBeTruthy();
+    const dbl = textOf(await call('click', { ref, double: true }));
+    expect(dbl).toMatch(/double-clicked/);
+    expect(dbl).toMatch(/button "Lesson A"/);
+    expect(textOf(await call('read_text'))).toContain('opened Course 1');
+
+    await call('navigate', { url });
+    const del = textOf(await call('click', { label: 'Delete' }));
+    expect(del).not.toMatch(/opened via/);
+    const status = textOf(await call('read_text'));
+    expect(status).not.toContain('delete retried');
+    expect(status).not.toContain('opened Course 1');
   });
 
   it('parallel: two agent sessions drive two tabs at the same time without mixing them up', async () => {

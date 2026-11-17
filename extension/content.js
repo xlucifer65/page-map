@@ -70,6 +70,7 @@
       const step = { action: cmd === 'select_option' ? 'select' : cmd, label: d.label, role: d.role };
       if (cmd === 'type') { step.text = d.secret ? undefined : String(args.text ?? ''); step.submit = args.submit || undefined; step.secret = d.secret; }
       if (cmd === 'select_option') step.option = String(args.option);
+      if (cmd === 'click' && args.double) step.double = true;
       if (cmd === 'check') step.checked = args.checked !== false;
       r.step = step;
       // Report right away: if this action navigates, this page won't live to send a reply.
@@ -78,8 +79,29 @@
     return r;
   }
 
+  // A single click that only focused/selected a list item: retry with Enter, then a double-click.
+  async function clickWithOpenFallback(args) {
+    const el = refs.resolve(args.ref);
+    const role = el && C.roleOf(el);
+    const eligible = el && !args.double && C.canRetryOpen(el, role, C.nameOf(el, document, role));
+    const before = eligible ? fullMap() : null;
+    const url = location.href;
+    const r = C.act(window, document, refs, 'click', args);
+    if (!r.ok || !eligible) return r;
+    await settle(700, 120);
+    const unchanged = () => location.href === url && el.isConnected && C.onlySoftChanges(before, fullMap());
+    if (!unchanged()) return r;
+    C.pressEnter(window, el);
+    await settle(700, 120);
+    if (!unchanged()) return { ...r, info: `${r.info} (opened via Enter)` };
+    C.act(window, document, refs, 'click', { ...args, double: true });
+    await settle(700, 120);
+    if (!unchanged()) return { ...r, info: `${r.info} (opened via double-click)` };
+    return r;
+  }
+
   async function doActionRaw(cmd, args) {
-    const r = C.act(window, document, refs, cmd, args);
+    const r = cmd === 'click' ? await clickWithOpenFallback(args) : C.act(window, document, refs, cmd, args);
     if (r.ok || !r.custom) return r;
     // Custom dropdown: open it, wait for options to render, pick the matching one.
     r.el.click();
