@@ -131,10 +131,22 @@ async function toContentFrame(tab, frameId, cmd, args) {
     }
     if (/message (port|channel) closed|back\/forward cache|page.*(unload|moved)/i.test(m)) {
       // The action navigated away. Report the new page instead.
+      if (frameId !== 0) return await afterFrameNavigation(tab, frameId, blocklist);
       return await afterNavigation(tab.id, blocklist, true);
     }
     throw e;
   }
+}
+
+// The action navigated a sub-frame: hand back that frame's new outline with namespaced refs.
+async function afterFrameNavigation(tab, frameId, blocklist) {
+  await new Promise((r) => setTimeout(r, 100));
+  await waitForLoad(tab.id);
+  const t = await chrome.tabs.get(tab.id);
+  if (C.isBlocked(t.url || '', blocklist)) return { ok: true, text: 'page navigated → [blocked site]' };
+  let o;
+  try { o = await toContentFrame(tab, frameId, 'outline', { auto_dismiss: false }); } catch (e) { o = { ok: false, error: String((e && e.message) || e) }; }
+  return { ok: true, text: `frame ${frameId} navigated\n${o.ok ? namespaceRefs(o.text, frameId) : o.error}` };
 }
 
 async function toContent(tab, cmd, args) {
@@ -332,7 +344,7 @@ async function run(cmd, args) {
   if (ACTIONS.has(cmd)) stepsByTab.set(tab.id, []);
   const res = await withSteps(tab.id, cmd, await toContent(tab, cmd, args));
   // The page answered before it started navigating (e.g. a form submit that loads a new page).
-  if (ACTIONS.has(cmd) && !args.quiet && res && res.ok && !/^page navigated/.test(res.text || '')) {
+  if (ACTIONS.has(cmd) && !args.quiet && res && res.ok && !/^(page|frame \d+) navigated/.test(res.text || '')) {
     await new Promise((r) => setTimeout(r, 150));
     const t = await chrome.tabs.get(tab.id);
     // Only a real page change counts: SPAs rewrite the query string when a dialog opens (same origin + path).

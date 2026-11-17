@@ -326,6 +326,23 @@ describe('F4 end-to-end', () => {
     expect(textOf(await call('read_text'))).toContain('opened Course 1');
   });
 
+  it('iframe navigation: click result carries the frame\'s new page with namespaced refs', async () => {
+    await call('navigate', { url: `${base}/frames.html` });
+    const found = textOf(await call('find', { query: 'Next folder' }));
+    const ref = found.match(/(f\d+:[a-z]{4}\d+) link "Next folder"/)?.[1];
+    expect(ref).toBeTruthy();
+    const res = textOf(await call('click', { ref }));
+    const heading = res.match(/(f\d+:[a-z]{4}\d+) h1 "Second folder"/)?.[1];
+    expect(heading, res).toBeTruthy();
+    expect(res).not.toMatch(/Frames Fixture/);
+    expect((await call('click', { ref: heading })).isError).toBeFalsy();
+    const found2 = textOf(await call('find', { query: 'Deep file' }));
+    const deep = found2.match(/(f\d+:[a-z]{4}\d+) button "Deep file"/)?.[1];
+    expect(deep.split(':')[0]).toBe(heading.split(':')[0]);
+    await call('click', { ref: deep });
+    expect(textOf(await call('read_text'))).toContain('opened Deep file');
+  });
+
   it('parallel: two agent sessions drive two tabs at the same time without mixing them up', async () => {
     const second = new Client({ name: 'e2e-2', version: '1.0.0' });
     await second.connect(new StdioClientTransport({
