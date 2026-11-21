@@ -441,6 +441,20 @@ describe('generic skills', () => {
     expect(p.C.act(p.win, p.doc, p.refs, 'check', { ref }).info).toMatch(/already checked/);
     expect(p.C.act(p.win, p.doc, p.refs, 'check', { ref, checked: false }).info).toMatch(/^unchecked/);
   });
+  it('click/check/type/select do not scroll the page; only scroll does', () => {
+    const p = page(`<input type="radio" name="q" aria-label="r" data-offscreen><input aria-label="t" data-offscreen>
+      <select aria-label="s" data-offscreen><option>a</option><option>b</option></select>`);
+    let scrolls = 0;
+    p.win.Element.prototype.scrollIntoView = () => { scrolls++; };
+    const [r, t, s] = snap(p, { all: true }).items.map((i) => i.ref);
+    p.C.act(p.win, p.doc, p.refs, 'click', { ref: r });
+    p.C.act(p.win, p.doc, p.refs, 'check', { ref: r, checked: false });
+    p.C.act(p.win, p.doc, p.refs, 'type', { ref: t, text: 'x' });
+    p.C.act(p.win, p.doc, p.refs, 'select_option', { ref: s, option: 'b' });
+    expect(scrolls).toBe(0);
+    p.C.act(p.win, p.doc, p.refs, 'scroll', { ref: r });
+    expect(scrolls).toBe(1);
+  });
 });
 
 describe('actions', () => {

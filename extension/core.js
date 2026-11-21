@@ -634,7 +634,8 @@
     if (refs.foreign && refs.foreign(args.ref)) return { ok: false, error: `ref ${args.ref} is from a previous page load — call outline/find again` };
     const el = refs.resolve(args.ref);
     if (!el) return { ok: false, error: `ref ${args.ref} not found (page changed — call read_page or find again)` };
-    if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    // Actions run as scripted DOM events, so they don't need the element on screen: only `scroll` moves the page.
+    if (action === 'scroll' && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', inline: 'nearest' });
 
     switch (action) {
       case 'click': {
