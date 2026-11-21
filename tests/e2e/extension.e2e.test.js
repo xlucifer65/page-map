@@ -37,8 +37,26 @@ beforeAll(async () => {
       res.writeHead(302, { location: `http://localhost:${server.address().port}/page2.html` });
       return res.end();
     }
-    const f = path.join(root, 'tests/fixtures', path.basename(req.url.split('?')[0]) || 'shop.html');
+    if (req.url.startsWith('/sso-bounce')) { // allowed → blocked host → (after a pause) back to an allowed page
+      res.writeHead(302, { location: `http://localhost:${server.address().port}/sso-hop` });
+      return res.end();
+    }
+    if (req.url.startsWith('/sso-hop')) {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(`<title>Sign in</title><p>secret sign-in form</p><script>setTimeout(() => location.href = 'http://127.0.0.1:${server.address().port}/page2.html', 800)</script>`);
+    }
+    if (req.url.startsWith('/sso-stuck')) {
+      res.writeHead(302, { location: `http://localhost:${server.address().port}/page2.html` });
+      return res.end();
+    }
+    const name = path.basename(req.url.split('?')[0]) || 'shop.html';
+    const f = path.join(root, 'tests/fixtures', name);
     if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); }
+    if (name === 'frames.html') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      const child = new URL(req.url, 'http://x').searchParams.get('child') || 'frame-child.html';
+      return res.end(fs.readFileSync(f, 'utf8').replaceAll('PORT', String(server.address().port)).replaceAll('CHILD', child));
+    }
     res.writeHead(200, { 'content-type': 'text/html' });
     fs.createReadStream(f).pipe(res);
   });
@@ -200,11 +218,31 @@ describe('F4 end-to-end', () => {
     await sw.evaluate(() => chrome.storage.local.set({ blocklist: ['localhost'] }));
     const r = await call('navigate', { url: `${base}/redirect` }); // 127.0.0.1 → localhost
     expect(r.isError).toBe(true);
-    expect(textOf(r)).toMatch(/blocklist/);
+    expect(textOf(r)).toMatch(/redirected to localhost \(blocked\)/);
     expect(textOf(r)).not.toContain('Second page');
     const tabs = textOf(await call('list_tabs'));
     expect(tabs).toMatch(/\[blocked\] localhost/);
     expect(tabs).not.toContain('Second Page"'); // no title of blocked tab
+    await sw.evaluate(() => chrome.storage.local.remove('blocklist'));
+    await call('navigate', { url: `${base}/shop.html` });
+  });
+
+  it('a transient redirect through a blocked host settles and returns the final page', async () => {
+    await sw.evaluate(() => chrome.storage.local.set({ blocklist: ['localhost'] }));
+    const r = await call('navigate', { url: `${base}/sso-bounce` });
+    expect(r.isError).toBeFalsy();
+    expect(textOf(r)).toContain('Second page');
+    expect(textOf(r)).not.toContain('secret sign-in form');
+    await sw.evaluate(() => chrome.storage.local.remove('blocklist'));
+    await call('navigate', { url: `${base}/shop.html` });
+  });
+
+  it('a redirect that stays on the blocked host still errors with no page content', async () => {
+    await sw.evaluate(() => chrome.storage.local.set({ blocklist: ['localhost'] }));
+    const r = await call('navigate', { url: `${base}/sso-stuck` });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toMatch(/redirected to localhost \(blocked\)/);
+    expect(textOf(r)).not.toContain('Second page');
     await sw.evaluate(() => chrome.storage.local.remove('blocklist'));
     await call('navigate', { url: `${base}/shop.html` });
   });
@@ -305,6 +343,76 @@ describe('F4 end-to-end', () => {
     const outside = await call('upload_file', { label: 'Plain file', paths: [path.join(dir, 'outside.txt')] });
     expect(outside.isError).toBe(true);
     expect(textOf(outside)).toMatch(/outside upload folders/);
+  });
+
+  it('reads and acts on cross-origin iframe content with namespaced refs', async () => {
+    await call('navigate', { url: `${base}/frames.html` });
+    const outline = textOf(await call('outline'));
+    expect(outline).toContain('SharePoint Files');
+    const found = textOf(await call('find', { query: 'Course 1', role: 'button' }));
+    const ref = found.match(/(f\d+:[a-z]{4}\d+) button "Course 1"/)?.[1];
+    expect(ref).toMatch(/^f\d+:[a-z]{4}\d+$/);
+    const clickResult = textOf(await call('click', { ref }));
+    const openRef = clickResult.match(/(f\d+:[a-z]{4}\d+) button "Open Course 1"/)?.[1];
+    expect(openRef).toMatch(/^f\d+:[a-z]{4}\d+$/);
+    await call('click', { ref: openRef });
+    expect(textOf(await call('read_text'))).toContain('opened Course 1');
+  });
+
+  it('iframe navigation: click result carries the frame\'s new page with namespaced refs', async () => {
+    await call('navigate', { url: `${base}/frames.html` });
+    const found = textOf(await call('find', { query: 'Next folder' }));
+    const ref = found.match(/(f\d+:[a-z]{4}\d+) link "Next folder"/)?.[1];
+    expect(ref).toBeTruthy();
+    const res = textOf(await call('click', { ref }));
+    const heading = res.match(/(f\d+:[a-z]{4}\d+) h1 "Second folder"/)?.[1];
+    expect(heading, res).toBeTruthy();
+    expect(res).not.toMatch(/Frames Fixture/);
+    expect((await call('click', { ref: heading })).isError).toBeFalsy();
+    const found2 = textOf(await call('find', { query: 'Deep file' }));
+    const deep = found2.match(/(f\d+:[a-z]{4}\d+) button "Deep file"/)?.[1];
+    expect(deep.split(':')[0]).toBe(heading.split(':')[0]);
+    await call('click', { ref: deep });
+    expect(textOf(await call('read_text'))).toContain('opened Deep file');
+  });
+
+  it('iframe labels: click/batch/fill_form reach elements that only exist in a frame', async () => {
+    await call('navigate', { url: `${base}/frames.html` });
+    const res = textOf(await call('click', { label: 'Course 1' }));
+    expect(res).toMatch(/f\d+:[a-z]{4}\d+ button "Open Course 1"/);
+    const b = await call('batch', { steps: [{ action: 'click', label: 'Open Course 1' }] });
+    expect(b.isError).toBeFalsy();
+    expect(textOf(await call('read_text'))).toContain('opened Course 1');
+    const f = await call('fill_form', { fields: { 'Your name': 'Ada' } });
+    expect(f.isError).toBeFalsy();
+    expect(textOf(await call('read_text', { query: 'Ada' }))).toMatch(/Ada/);
+    const mixed = await call('batch', { steps: [{ action: 'click', ref: 'f1:abcd1' }, { action: 'click', ref: 'abcd2' }] });
+    expect(textOf(mixed)).toMatch(/different frames/);
+  });
+
+  it('DetailsList-style lists: label click opens via Enter, double:true opens directly, Delete is never retried', async () => {
+    const url = `${base}/frames.html?child=frame-list.html`;
+    await call('navigate', { url });
+    const res = textOf(await call('click', { label: 'Course 1' }));
+    expect(res).toMatch(/opened via (Enter|double-click)/);
+    expect(res).toMatch(/f\d+:[a-z]{4}\d+ button "Lesson A"/);
+    expect(textOf(await call('read_text'))).toContain('opened Course 1');
+
+    await call('navigate', { url });
+    const found = textOf(await call('find', { query: 'Course 1', role: 'button' }));
+    const ref = found.match(/(f\d+:[a-z]{4}\d+) button "Course 1"/)?.[1];
+    expect(ref).toBeTruthy();
+    const dbl = textOf(await call('click', { ref, double: true }));
+    expect(dbl).toMatch(/double-clicked/);
+    expect(dbl).toMatch(/button "Lesson A"/);
+    expect(textOf(await call('read_text'))).toContain('opened Course 1');
+
+    await call('navigate', { url });
+    const del = textOf(await call('click', { label: 'Delete' }));
+    expect(del).not.toMatch(/opened via/);
+    const status = textOf(await call('read_text'));
+    expect(status).not.toContain('delete retried');
+    expect(status).not.toContain('opened Course 1');
   });
 
   it('parallel: two agent sessions drive two tabs at the same time without mixing them up', async () => {

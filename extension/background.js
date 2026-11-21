@@ -81,32 +81,176 @@ function waitForLoad(tabId, timeout = 15000) {
   });
 }
 
-async function inject(tabId) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['core.js', 'content.js'] });
+// A tab bounced through a blocked host (SSO sign-in) is usually mid-redirect: poll until it settles,
+// reading nothing meanwhile, and let the caller re-check the final URL.
+async function settleIfBlocked(tabId, blocklist, ms = 5000) {
+  const blockedNow = (t) => C.isBlocked(t.url || '', blocklist) || C.isBlocked(t.pendingUrl || '', blocklist);
+  let t = await chrome.tabs.get(tabId);
+  const end = Date.now() + ms;
+  while (blockedNow(t) && Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 150));
+    try { t = await chrome.tabs.get(tabId); } catch (_) { break; }
+    if (!blockedNow(t) && t.status !== 'complete') await waitForLoad(tabId);
+  }
+  return chrome.tabs.get(tabId);
 }
 
-async function toContent(tab, cmd, args) {
+// Names the host a navigation ended on when it was redirected there (host only: paths can hold tokens).
+function redirectError(tab, requestedUrl, blocklist, generic) {
+  let host = '', asked = '';
+  try { host = new URL(tab.url || tab.pendingUrl || '').hostname; asked = new URL(requestedUrl).hostname; } catch (_) { return generic; }
+  if (!host || host === asked) return generic;
+  const signIn = /(^|\.)(login|accounts|signin|auth|sso)\./i.test(host);
+  return `tab ${tab.id} redirected to ${host} (blocked${signIn ? ': sign-in page' : ''}); ${signIn ? 'sign in manually and retry' : 'nothing was read'}`;
+}
+
+async function frameIds(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => true,
+    });
+    return [...new Set(results.map((r) => r.frameId).filter((id) => Number.isInteger(id)))].sort((a, b) => a - b);
+  } catch (_) {
+    return [0];
+  }
+}
+
+function splitFrameRef(ref) {
+  const m = String(ref || '').match(/^f(\d+):(.+)$/);
+  return m ? { frameId: Number(m[1]), ref: m[2] } : null;
+}
+
+function namespaceRefs(text, frameId) {
+  return String(text || '').replace(/\b[a-z]{4}\d+\b/g, (ref) => `f${frameId}:${ref}`);
+}
+
+async function toContentFrame(tab, frameId, cmd, args, forceNs = false) {
   const blocklist = await getBlocklist();
   const current = await chrome.tabs.get(tab.id); // re-read: the tab may have navigated/redirected
   if (C.isBlocked(current.url || current.pendingUrl || '', blocklist) || C.isBlocked(current.pendingUrl || '', blocklist)) {
     return { ok: false, error: `tab ${tab.id} is on the page-map blocklist; nothing was read` };
   }
-  const msg = { __pagemap: true, cmd, args, blocklist };
+  const targetArgs = { ...args };
+  const framed = splitFrameRef(targetArgs.ref);
+  if (framed) {
+    if (framed.frameId !== frameId) return { ok: false, error: `ref ${targetArgs.ref} belongs to frame ${framed.frameId}` };
+    targetArgs.ref = framed.ref;
+  }
+  const msg = { __pagemap: true, cmd, args: targetArgs, blocklist };
+  const namespaceActionResult = (result) => (
+    (framed || forceNs) && result && result.ok && typeof result.text === 'string'
+      ? { ...result, text: namespaceRefs(result.text, frameId) }
+      : result
+  );
   try {
-    return await chrome.tabs.sendMessage(tab.id, msg);
+    return namespaceActionResult(await chrome.tabs.sendMessage(tab.id, msg, { frameId }));
   } catch (e) {
     const m = String(e && e.message);
     if (/Receiving end does not exist|Could not establish connection/i.test(m)) {
       // Tab was open before the extension loaded (or a fresh navigation): inject and retry.
-      await inject(tab.id);
-      return await chrome.tabs.sendMessage(tab.id, msg);
+      await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, files: ['core.js', 'content.js'] });
+      return namespaceActionResult(await chrome.tabs.sendMessage(tab.id, msg, { frameId }));
     }
     if (/message (port|channel) closed|back\/forward cache|page.*(unload|moved)/i.test(m)) {
       // The action navigated away. Report the new page instead.
+      if (frameId !== 0) return await afterFrameNavigation(tab, frameId, blocklist);
       return await afterNavigation(tab.id, blocklist, true);
     }
     throw e;
   }
+}
+
+// The action navigated a sub-frame: hand back that frame's new outline with namespaced refs.
+async function afterFrameNavigation(tab, frameId, blocklist) {
+  await new Promise((r) => setTimeout(r, 100));
+  await waitForLoad(tab.id);
+  const t = await chrome.tabs.get(tab.id);
+  if (C.isBlocked(t.url || '', blocklist)) return { ok: true, text: 'page navigated → [blocked site]' };
+  let o;
+  try { o = await toContentFrame(tab, frameId, 'outline', { auto_dismiss: false }); } catch (e) { o = { ok: false, error: String((e && e.message) || e) }; }
+  return { ok: true, text: `frame ${frameId} navigated\n${o.ok ? namespaceRefs(o.text, frameId) : o.error}` };
+}
+
+// Frame that holds the element named by `args` (label/role): frame 0 wins, else the first sub-frame that matches.
+async function frameForLabel(tab, args) {
+  const ids = await frameIds(tab.id);
+  for (const frameId of ids) {
+    if (ids.length === 1) return frameId;
+    try {
+      const r = await toContentFrame(tab, frameId, 'probe', { label: args.label, role: args.role });
+      if (r && r.ok) return frameId;
+    } catch (_) { /* frame unavailable: try the next one */ }
+  }
+  return 0;
+}
+
+const LABELED = new Set(['click', 'type', 'select_option', 'check']);
+
+// batch / fill_form run inside ONE frame: the one named by the steps' refs, else the first frame holding the first labelled target.
+async function toBatchFrame(tab, cmd, args) {
+  const items = cmd === 'batch' ? args.steps : Object.keys(args.fields || {}).map((label) => ({ label }));
+  if (!Array.isArray(items)) return toContentFrame(tab, 0, cmd, args);
+  const refFrames = new Set();
+  let prefixed = false;
+  const steps = items.map((st) => {
+    if (!st || st.ref == null) return st;
+    const fr = splitFrameRef(st.ref);
+    refFrames.add(fr ? fr.frameId : 0);
+    if (!fr) return st;
+    prefixed = true;
+    return { ...st, ref: fr.ref };
+  });
+  if (refFrames.size > 1) return { ok: false, error: 'steps target different frames; use one batch per frame' };
+  let fid = refFrames.size ? [...refFrames][0] : 0;
+  if (!refFrames.size) {
+    const first = items.find((st) => st && st.label != null);
+    if (first) fid = await frameForLabel(tab, first);
+  }
+  const out = cmd === 'batch' ? { ...args, steps } : args;
+  return toContentFrame(tab, fid, cmd, out, prefixed || fid !== 0);
+}
+
+async function toContent(tab, cmd, args) {
+  const framed = splitFrameRef(args.ref);
+  if (framed) return toContentFrame(tab, framed.frameId, cmd, args);
+  if (LABELED.has(cmd) && args.ref == null && args.label != null) {
+    const frameId = await frameForLabel(tab, args);
+    return toContentFrame(tab, frameId, cmd, args, frameId !== 0);
+  }
+  if (cmd === 'batch' || cmd === 'fill_form') return toBatchFrame(tab, cmd, args);
+
+  const aggregate = new Set(['outline', 'read_page', 'find', 'read_text']);
+  if (!aggregate.has(cmd)) return toContentFrame(tab, 0, cmd, args);
+
+  const ids = await frameIds(tab.id);
+  if (ids.length === 1) return toContentFrame(tab, ids[0], cmd, args);
+  const results = await Promise.all(ids.map(async (frameId) => {
+    try {
+      const result = await toContentFrame(tab, frameId, cmd, args);
+      if (!result.ok) return { frameId, result };
+      return {
+        frameId,
+        result: {
+          ...result,
+          text: cmd === 'read_text' ? result.text : namespaceRefs(result.text, frameId),
+        },
+      };
+    } catch (e) {
+      return { frameId, result: { ok: false, error: String((e && e.message) || e) } };
+    }
+  }));
+  const good = results.filter(({ result }) => result.ok);
+  if (!good.length) return results[0]?.result || { ok: false, error: 'no frame responded' };
+  const text = good.map(({ frameId, result }) => {
+    const heading = frameId === 0 ? '' : `\n[iframe frame ${frameId}]\n`;
+    return heading + result.text;
+  }).join('\n');
+  const failed = results.filter(({ result }) => !result.ok);
+  return {
+    ok: true,
+    text: text + (failed.length ? `\n… ${failed.length} frame${failed.length === 1 ? '' : 's'} unavailable` : ''),
+  };
 }
 
 // The action loaded a new page: hand back the new page's outline right away (saves the agent a turn).
@@ -115,8 +259,8 @@ async function toContent(tab, cmd, args) {
 async function afterNavigation(tabId, blocklist, afterAction = false) {
   await new Promise((r) => setTimeout(r, 100));
   await waitForLoad(tabId);
-  const t = await chrome.tabs.get(tabId);
-  if (C.isBlocked(t.url || '', blocklist)) return { ok: true, text: 'page navigated → [blocked site]' };
+  const t = await settleIfBlocked(tabId, blocklist);
+  if (C.isBlocked(t.url || '', blocklist) || C.isBlocked(t.pendingUrl || '', blocklist)) return { ok: true, text: 'page navigated → [blocked site]' };
   const o = await toContent(t, 'outline', afterAction ? { auto_dismiss: false } : {});
   return { ok: true, text: `page navigated → ${t.url}\n${o.ok ? o.text : o.error}` };
 }
@@ -211,11 +355,16 @@ async function run(cmd, args) {
     else { tab = await resolveTab(args.tab); await chrome.tabs.update(tab.id, { url: args.url }); }
     await new Promise((r) => setTimeout(r, 100));
     await waitForLoad(tab.id);
+    const bl = await getBlocklist();
     if (args.quiet) { // vision mode: don't hand out structure
-      const t = await chrome.tabs.get(tab.id);
-      return C.isBlocked(t.url || '', await getBlocklist()) ? { ok: false, error: 'blocked site' } : { ok: true, tabId: tab.id, text: `tab ${tab.id} loaded ${t.url}` };
+      const t = await settleIfBlocked(tab.id, bl);
+      return C.isBlocked(t.url || '', bl) ? { ok: false, error: redirectError(t, args.url, bl, 'blocked site') } : { ok: true, tabId: tab.id, text: `tab ${tab.id} loaded ${t.url}` };
     }
-    const res = await toContent(await chrome.tabs.get(tab.id), 'outline', {});
+    const final = await settleIfBlocked(tab.id, bl);
+    if (C.isBlocked(final.url || '', bl) || C.isBlocked(final.pendingUrl || '', bl)) {
+      return { ok: false, error: redirectError(final, args.url, bl, `tab ${tab.id} is on the page-map blocklist; nothing was read`) };
+    }
+    const res = await toContent(final, 'outline', {});
     return res.ok ? { ok: true, tabId: tab.id, text: `tab ${tab.id}\n${res.text}` } : res;
   }
 
@@ -261,13 +410,13 @@ async function run(cmd, args) {
   }
 
   const allowed = new Set(['outline', 'read_text', 'read_page', 'find', 'changes', 'click', 'type', 'select_option', 'scroll',
-    'check', 'batch', 'fill_form', 'click_xy', 'type_text']);
+    'check', 'batch', 'fill_form', 'click_xy', 'type_text', 'key']);
   if (!allowed.has(cmd)) return { ok: false, error: `unknown command ${cmd}` };
   const urlBefore = tab.url;
   if (ACTIONS.has(cmd)) stepsByTab.set(tab.id, []);
   const res = await withSteps(tab.id, cmd, await toContent(tab, cmd, args));
   // The page answered before it started navigating (e.g. a form submit that loads a new page).
-  if (ACTIONS.has(cmd) && !args.quiet && res && res.ok && !/^page navigated/.test(res.text || '')) {
+  if (ACTIONS.has(cmd) && !args.quiet && res && res.ok && !/^(page|frame \d+) navigated/.test(res.text || '')) {
     await new Promise((r) => setTimeout(r, 150));
     const t = await chrome.tabs.get(tab.id);
     // Only a real page change counts: SPAs rewrite the query string when a dialog opens (same origin + path).

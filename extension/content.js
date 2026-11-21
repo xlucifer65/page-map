@@ -70,6 +70,7 @@
       const step = { action: cmd === 'select_option' ? 'select' : cmd, label: d.label, role: d.role };
       if (cmd === 'type') { step.text = d.secret ? undefined : String(args.text ?? ''); step.submit = args.submit || undefined; step.secret = d.secret; }
       if (cmd === 'select_option') step.option = String(args.option);
+      if (cmd === 'click' && args.double) step.double = true;
       if (cmd === 'check') step.checked = args.checked !== false;
       r.step = step;
       // Report right away: if this action navigates, this page won't live to send a reply.
@@ -78,8 +79,29 @@
     return r;
   }
 
+  // A single click that only focused/selected a list item: retry with Enter, then a double-click.
+  async function clickWithOpenFallback(args) {
+    const el = refs.resolve(args.ref);
+    const role = el && C.roleOf(el);
+    const eligible = el && !args.double && C.canRetryOpen(el, role, C.nameOf(el, document, role));
+    const before = eligible ? fullMap() : null;
+    const url = location.href;
+    const r = C.act(window, document, refs, 'click', args);
+    if (!r.ok || !eligible) return r;
+    await settle(700, 120);
+    const unchanged = () => location.href === url && el.isConnected && C.onlySoftChanges(before, fullMap());
+    if (!unchanged()) return r;
+    C.pressEnter(window, el);
+    await settle(700, 120);
+    if (!unchanged()) return { ...r, info: `${r.info} (opened via Enter)` };
+    C.act(window, document, refs, 'click', { ...args, double: true });
+    await settle(700, 120);
+    if (!unchanged()) return { ...r, info: `${r.info} (opened via double-click)` };
+    return r;
+  }
+
   async function doActionRaw(cmd, args) {
-    const r = C.act(window, document, refs, cmd, args);
+    const r = cmd === 'click' ? await clickWithOpenFallback(args) : C.act(window, document, refs, cmd, args);
     if (r.ok || !r.custom) return r;
     // Custom dropdown: open it, wait for options to render, pick the matching one.
     r.el.click();
@@ -96,19 +118,11 @@
   }
 
   // A step can name its target by ref or by human label ("Email", "Country").
-  const FIELD_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'password']);
   function target(step) {
     if (step.ref != null) return { ref: String(step.ref) };
     if (step.label == null) return { error: 'step needs ref or label' };
-    // A known non-field role (button, link…) narrows the search: "Search" the button vs the box.
-    if (step.role && !FIELD_ROLES.has(step.role)) {
-      const hit = C.find(window, document, refs, step.label, { role: step.role, limit: 1, minScore: 30 }).items[0];
-      if (hit) return { ref: hit.ref, role: hit.role };
-    }
-    const f = C.resolveField(window, document, refs, step.label);
-    if (f) return { ref: f.ref, role: f.role };
-    const any = C.find(window, document, refs, step.label, { limit: 1, minScore: 30 }).items[0];
-    return any ? { ref: any.ref, role: any.role } : { error: `nothing labelled "${step.label}"` };
+    const hit = C.resolveLabel(window, document, refs, step.label, { role: step.role, action: step.action });
+    return hit || { error: `nothing labelled "${step.label}"` };
   }
 
   async function runSteps(steps) {
@@ -133,7 +147,7 @@
   function formSteps(fields, submit) {
     const steps = [];
     for (const [label, value] of Object.entries(fields || {})) {
-      const t = target({ label });
+      const t = target({ label, action: 'fill' });
       if (t.error) { steps.push({ action: 'type', label }); continue; } // will report the miss
       if (['checkbox', 'radio', 'switch'].includes(t.role)) steps.push({ action: 'check', ref: t.ref, label, checked: value !== false && value !== 'false' && value !== 'no' });
       else if (['combobox', 'listbox'].includes(t.role)) steps.push({ action: 'select', ref: t.ref, label, option: String(value) });
@@ -237,10 +251,14 @@
         baseline = now;
         return { ok: true, text: C.formatDiff(d) };
       }
+      case 'probe': {
+        const t = target(args);
+        return t.error ? { ok: false, error: t.error } : { ok: true, text: '' };
+      }
       case 'click': case 'type': case 'select_option': case 'scroll': case 'check': {
         // label instead of ref: saves the agent a find() call ("type into 'Search Wikipedia'").
         if (args.ref == null && args.label != null) {
-          const t = target(args);
+          const t = target({ ...args, action: cmd });
           if (t.error) return { ok: false, error: t.error };
           args = { ...args, ref: t.ref };
         }

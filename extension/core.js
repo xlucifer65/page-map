@@ -36,6 +36,7 @@
     // '!' entries are exceptions that win over the patterns above.
     '!worldbank.org', '!bankrate.com', '!databank.*',
     '!teams.microsoft.com', '!teams.cloud.microsoft', '!teams.live.com', // Teams: allowed (user choice)
+    '!sharepoint.com', // SharePoint / OneDrive for Business docs: allowed (user choice)
   ];
   // Patterns without '*' also cover subdomains: 'chase.com' blocks 'secure.chase.com'.
 
@@ -128,7 +129,7 @@
   }
 
   function roleOf(el) {
-    const explicit = (el.getAttribute('role') || '').trim().split(/\s+/)[0];
+    const explicit = (el.getAttribute('role') || '').trim().split(/\s+/)[0].toLowerCase();
     if (explicit) return explicit;
     const tag = el.tagName.toLowerCase();
     switch (tag) {
@@ -492,6 +493,14 @@
     return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
   }
 
+  // Same-name candidates (a row's checkbox, rowheader and button) → the primary actionable one first.
+  const RANK_GROUPS = [['link'], ['button'], ['menuitem', 'tab', 'option', 'treeitem'], ['textbox', 'combobox', 'searchbox', 'password'],
+    null, ['rowheader', 'gridcell', 'cell'], ['checkbox', 'radio', 'switch']];
+  function roleRank(role) {
+    const i = RANK_GROUPS.findIndex((g) => g && g.includes(role));
+    return i < 0 ? 4 : i;
+  }
+
   function find(win, doc, refs, query, opts = {}) {
     const limit = opts.limit || 8;
     const q = clean(query, 200).toLowerCase();
@@ -515,7 +524,7 @@
       }
       if (s > 0 && s >= (opts.minScore || 0)) scored.push([s, it]);
     }
-    scored.sort((a, b) => b[0] - a[0]);
+    scored.sort((a, b) => b[0] - a[0] || (opts.rank ? roleRank(a[1].role) - roleRank(b[1].role) : 0));
     const top = scored.slice(0, limit).map(x => x[1]);
     return { items: top, matches: scored.length, capped: snap.capped, note: snap.capped ? capNote(snap.maxVisit) : '' };
   }
@@ -583,6 +592,39 @@
     el.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true, composed: true, ...init }));
   }
 
+  function pressEnter(win, el) {
+    const key = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true };
+    if (typeof el.focus === 'function') el.focus({ preventScroll: true });
+    el.dispatchEvent(new win.KeyboardEvent('keydown', key));
+    el.dispatchEvent(new win.KeyboardEvent('keypress', key));
+    el.dispatchEvent(new win.KeyboardEvent('keyup', key));
+  }
+
+  // List items (Fluent DetailsList…) often open only on Enter / double-click. A single click that did nothing
+  // but focus/select such an element may be retried; never for toggles, submit buttons or destructive names.
+  const DESTRUCTIVE = /delete|remove|send|pay|buy|submit|confirm/i;
+  function canRetryOpen(el, role, name) {
+    if (!['link', 'button', 'rowheader', 'gridcell'].includes(role)) return false;
+    if (DESTRUCTIVE.test(name || '')) return false;
+    if (el.tagName === 'A' && /^(?!#|javascript:)/i.test(el.getAttribute('href') || '#')) return false; // real navigation
+    if ((el.type === 'submit' && (el.form || el.tagName === 'INPUT')) || el.type === 'checkbox' || el.type === 'radio') return false;
+    return true;
+  }
+
+  // True when two snapshots differ only in focus/selection/checked flags (nothing added, removed or renamed).
+  function onlySoftChanges(prev, next) {
+    if (prev.size !== next.size) return false;
+    const strip = (line) => line.replace(/ \[([^\]]*)\]$/, (_, f) => {
+      const keep = f.split(',').filter((x) => !['focused', 'checked', 'selected', 'current'].includes(x));
+      return keep.length ? ` [${keep.join(',')}]` : '';
+    });
+    for (const [ref, line] of next) {
+      if (!prev.has(ref)) return false;
+      if (prev.get(ref) !== line && strip(prev.get(ref)) !== strip(line)) return false;
+    }
+    return true;
+  }
+
   function act(win, doc, refs, action, args = {}) {
     if (action === 'scroll' && args.ref == null) {
       const dir = args.direction === 'up' ? -1 : 1;
@@ -592,20 +634,25 @@
     if (refs.foreign && refs.foreign(args.ref)) return { ok: false, error: `ref ${args.ref} is from a previous page load — call outline/find again` };
     const el = refs.resolve(args.ref);
     if (!el) return { ok: false, error: `ref ${args.ref} not found (page changed — call read_page or find again)` };
-    if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    // Actions run as scripted DOM events, so they don't need the element on screen: only `scroll` moves the page.
+    if (action === 'scroll' && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', inline: 'nearest' });
 
     switch (action) {
       case 'click': {
         if (el.disabled) return { ok: false, error: `ref ${args.ref} is disabled` };
         const opts = { bubbles: true, cancelable: true, composed: true, button: 0, view: win };
         // Many menus open on pointerdown/mousedown, not click.
-        if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerdown', opts));
-        el.dispatchEvent(new win.MouseEvent('mousedown', opts));
-        if (typeof el.focus === 'function') el.focus({ preventScroll: true });
-        if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerup', opts));
-        el.dispatchEvent(new win.MouseEvent('mouseup', opts));
-        el.click();
-        return { ok: true, info: `clicked ${args.ref}` };
+        for (let n = 1; n <= (args.double ? 2 : 1); n++) {
+          const o = { ...opts, detail: n };
+          if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerdown', o));
+          el.dispatchEvent(new win.MouseEvent('mousedown', o));
+          if (typeof el.focus === 'function') el.focus({ preventScroll: true });
+          if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerup', o));
+          el.dispatchEvent(new win.MouseEvent('mouseup', o));
+          el.click();
+          if (n === 2) el.dispatchEvent(new win.MouseEvent('dblclick', o));
+        }
+        return { ok: true, info: `${args.double ? 'double-clicked' : 'clicked'} ${args.ref}` };
       }
       case 'type': {
         if (isSecret(el) && !args.allow_secret) return { ok: false, error: `ref ${args.ref} is a secret field; refusing to type without allow_secret=true` };
@@ -695,9 +742,22 @@
   const CONTROL_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'slider', 'password', 'spinbutton']);
   function resolveField(win, doc, refs, label) {
     // minScore: the label must really match (a role word like "button" alone is not enough).
-    const r = find(win, doc, refs, label, { limit: 20, minScore: 20 });
+    const r = find(win, doc, refs, label, { limit: 20, minScore: 20, rank: true });
     const hit = r.items.find((it) => CONTROL_ROLES.has(it.role));
     return hit ? { ref: hit.ref, role: hit.role, el: refs.resolve(hit.ref) } : null;
+  }
+
+  // Target of a human label for `action`. An explicit role wins; clicks prefer the primary actionable
+  // element, other actions prefer form controls.
+  function resolveLabel(win, doc, refs, label, opts = {}) {
+    const pick = (o) => find(win, doc, refs, label, { limit: 1, minScore: 30, rank: true, ...o }).items[0];
+    let hit = opts.role ? pick({ role: opts.role }) : null;
+    if (!hit && opts.action !== 'click') {
+      const f = resolveField(win, doc, refs, label);
+      if (f) return { ref: f.ref, role: f.role };
+    }
+    hit = hit || pick({});
+    return hit ? { ref: hit.ref, role: hit.role } : null;
   }
 
   // Cookie banners / consent walls / newsletter popups and the button that closes them.
@@ -747,8 +807,8 @@
 
   root.PageMapCore = {
     nextBackoff,
-    findOption, resolveField, findInterruption, overlayBoxes,
+    findOption, resolveField, resolveLabel, findInterruption, overlayBoxes,
     createRefs, snapshot, format, formatItem, outline, readText, grepText, find, diff, formatDiff, lineMap,
-    isBlocked, isSecret, looksLikeCard, maskCards, roleOf, nameOf, act, DEFAULT_BLOCKLIST,
+    canRetryOpen, onlySoftChanges, pressEnter, isBlocked, isSecret, looksLikeCard, maskCards, roleOf, nameOf, act, DEFAULT_BLOCKLIST,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

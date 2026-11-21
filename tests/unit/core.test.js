@@ -211,6 +211,12 @@ describe('D2 blocklist', () => {
     expect(C.isBlocked('https://github.com/', ['github.com'])).toBe(true);
     expect(C.isBlocked('not a url')).toBe(false);
   });
+  it('allows SharePoint but keeps the Microsoft sign-in page blocked', () => {
+    const { C } = page('');
+    expect(C.isBlocked('https://contoso.sharepoint.com/sites/x', C.DEFAULT_BLOCKLIST)).toBe(false);
+    expect(C.isBlocked('https://contoso.sharepoint.com/sites/x/Documents%20partages/Forms/AllItems.aspx?id=%2Fsites%2Fx%2Fa', C.DEFAULT_BLOCKLIST)).toBe(false);
+    expect(C.isBlocked('https://login.microsoftonline.com/common/oauth2/authorize', C.DEFAULT_BLOCKLIST)).toBe(true);
+  });
   it('normalizes trailing dots/case and plain patterns cover subdomains', () => {
     const { C } = page('');
     expect(C.isBlocked('https://MAIL.google.com./x')).toBe(true);
@@ -404,12 +410,50 @@ describe('generic skills', () => {
     expect(p.C.resolveField(p.win, p.doc, p.refs, 'Email').role).toBe('textbox');
     expect(p.C.resolveField(p.win, p.doc, p.refs, 'accept the terms').role).toBe('checkbox');
   });
+  it('resolveLabel ranks same-name matches: button over rowheader/checkbox, role overrides', () => {
+    const p = page(`<div role="row"><input type="checkbox" aria-label="Course 1"><div role="rowheader" tabindex="0">Course 1</div><button>Course 1</button></div>`);
+    const pick = (o) => p.C.resolveLabel(p.win, p.doc, p.refs, 'Course 1', o).role;
+    expect(pick({ action: 'click' })).toBe('button');
+    expect(pick({ action: 'click', role: 'checkbox' })).toBe('checkbox');
+    expect(pick({ action: 'click', role: 'rowheader' })).toBe('rowheader');
+  });
+  it('click double dispatches two click rounds then dblclick; open-retry guards', () => {
+    const p = page(`<button id="b">Open</button><button id="d">Delete file</button><input type="checkbox" id="c" aria-label="x">`);
+    const seen = [];
+    const b = p.doc.getElementById('b');
+    for (const t of ['mousedown', 'click', 'dblclick']) b.addEventListener(t, () => seen.push(t));
+    const ref = snap(p).items.find((i) => i.name === 'Open').ref;
+    p.C.act(p.win, p.doc, p.refs, 'click', { ref, double: true });
+    expect(seen).toEqual(['mousedown', 'click', 'mousedown', 'click', 'dblclick']);
+    expect(p.C.canRetryOpen(b, 'button', 'Open')).toBe(true);
+    expect(p.C.canRetryOpen(p.doc.getElementById('d'), 'button', 'Delete file')).toBe(false);
+    expect(p.C.canRetryOpen(p.doc.getElementById('c'), 'checkbox', 'x')).toBe(false);
+    const m = (l) => new Map([['r1', l]]);
+    expect(p.C.onlySoftChanges(m('r1 button "A"'), m('r1 button "A" [focused]'))).toBe(true);
+    expect(p.C.onlySoftChanges(m('r1 checkbox "A"'), m('r1 checkbox "A" [checked,focused]'))).toBe(true);
+    expect(p.C.onlySoftChanges(m('r1 button "A"'), m('r1 button "B"'))).toBe(false);
+    expect(p.C.onlySoftChanges(m('r1 button "A"'), new Map([['r1', 'r1 button "A"'], ['r2', 'x']]))).toBe(false);
+  });
   it('check sets a checkbox only when needed', () => {
     const p = page(`<input type="checkbox" aria-label="t">`);
     const ref = snap(p).items[0].ref;
     expect(p.C.act(p.win, p.doc, p.refs, 'check', { ref }).info).toMatch(/^checked/);
     expect(p.C.act(p.win, p.doc, p.refs, 'check', { ref }).info).toMatch(/already checked/);
     expect(p.C.act(p.win, p.doc, p.refs, 'check', { ref, checked: false }).info).toMatch(/^unchecked/);
+  });
+  it('click/check/type/select do not scroll the page; only scroll does', () => {
+    const p = page(`<input type="radio" name="q" aria-label="r" data-offscreen><input aria-label="t" data-offscreen>
+      <select aria-label="s" data-offscreen><option>a</option><option>b</option></select>`);
+    let scrolls = 0;
+    p.win.Element.prototype.scrollIntoView = () => { scrolls++; };
+    const [r, t, s] = snap(p, { all: true }).items.map((i) => i.ref);
+    p.C.act(p.win, p.doc, p.refs, 'click', { ref: r });
+    p.C.act(p.win, p.doc, p.refs, 'check', { ref: r, checked: false });
+    p.C.act(p.win, p.doc, p.refs, 'type', { ref: t, text: 'x' });
+    p.C.act(p.win, p.doc, p.refs, 'select_option', { ref: s, option: 'b' });
+    expect(scrolls).toBe(0);
+    p.C.act(p.win, p.doc, p.refs, 'scroll', { ref: r });
+    expect(scrolls).toBe(1);
   });
 });
 
@@ -526,5 +570,17 @@ describe('find typo tolerance', () => {
   it('label targeting still tolerates a typo but not junk', () => {
     expect(p.C.resolveField(p.win, p.doc, p.refs, 'Emial').role).toBe('textbox');
     expect(p.C.resolveField(p.win, p.doc, p.refs, 'zzzz')).toBeFalsy();
+  });
+});
+
+describe('find role filters', () => {
+  it('matches tabs by role', () => {
+    const p = page('<div role="tab">Shared</div><button>Shared</button>');
+    expect(p.C.find(p.win, p.doc, p.refs, 'Shared', { role: 'tab' }).items.map((i) => i.role)).toEqual(['tab']);
+  });
+
+  it('normalizes explicit role casing', () => {
+    const p = page('<div role="TAB">Shared</div>');
+    expect(p.C.find(p.win, p.doc, p.refs, 'Shared', { role: 'tab' }).items[0].role).toBe('tab');
   });
 });
