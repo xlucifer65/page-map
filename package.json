@@ -23,7 +23,7 @@
     "@modelcontextprotocol/client": "^2.4.0",
     "jsdom": "^31.0.1",
     "playwright": "^1.65.1",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "license": "MIT",
   "keywords": [
